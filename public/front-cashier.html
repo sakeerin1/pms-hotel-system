@@ -1,0 +1,481 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Front Cashier / Payment</title>
+  <link rel="stylesheet" href="/public/style.css">
+  <style>
+    .modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.35);display:none;align-items:flex-start;justify-content:center;padding:36px 12px;z-index:20}
+    .modal{background:#d5eeee;border:1px solid var(--line);width:min(900px,100%);max-height:88vh;overflow:auto;box-shadow:0 12px 40px rgba(0,0,0,.35)}
+    .modal-h{background:linear-gradient(#edffff,#b6dddd);border-bottom:1px solid var(--line);padding:9px;font-weight:700;display:flex;justify-content:space-between}
+    .modal-b{padding:10px}
+    .print-area{display:none}
+    @media print{
+      body>*:not(.print-area){display:none!important}
+      .print-area{display:block!important;font-family:Tahoma,Arial,sans-serif;color:#000}
+      .print-box{border:1px solid #000;padding:18px;margin:12px}
+      .print-title{text-align:center;font-size:22px;font-weight:700;margin-bottom:14px}
+      table.print-table{width:100%;border-collapse:collapse}
+      table.print-table td, table.print-table th{border:1px solid #000;padding:8px;white-space:normal}
+    }
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <div class="layout3">
+    <div class="panel">
+      <div class="panel-h">Front Cashier / Receive Payment</div>
+      <div class="panel-b">
+        <div class="filters">
+          <label>Search Booking
+            <input id="qtxt" placeholder="ชื่อ / ห้อง / เลขจอง / เบอร์">
+          </label>
+          <label>กะทำงาน
+            <select id="workShift" data-shift-select></select>
+          </label>
+          <label>Status
+            <select id="payFilter">
+              <option value="">All</option>
+              <option value="unpaid">ยังไม่จ่าย</option>
+              <option value="partial">จ่ายบางส่วน</option>
+              <option value="paid">จ่ายครบ</option>
+            </select>
+          </label>
+          <button class="btn" onclick="searchBookings()">Search</button>
+          <button class="btn" onclick="openCloseShift()">ปิดรอบกะ</button>
+        </div>
+
+        <div class="table-wrap" style="margin-top:8px">
+          <table>
+            <thead>
+              <tr>
+                <th>Booking</th>
+                <th>Room</th>
+                <th>Guest</th>
+                <th>Total</th>
+                <th>Paid</th>
+                <th>Balance</th>
+                <th>Payment Status</th>
+                <th>Select</th>
+              </tr>
+            </thead>
+            <tbody id="bookingRows"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-h">Payment Form</div>
+      <div class="panel-b">
+        <div id="selected" class="card">ยังไม่ได้เลือกรายการ</div>
+
+        <div class="formgrid" style="grid-template-columns:repeat(2,minmax(0,1fr));margin-top:8px">
+          <label>ยอดรับชำระ
+            <input id="amount" type="number">
+          </label>
+          <label>ประเภทการชำระ
+            <select id="method">
+              <option>Cash</option>
+              <option>Transfer</option>
+              <option>QR</option>
+              <option>Credit Card</option>
+            </select>
+          </label>
+          <label>หมวดรายรับ
+            <select id="category">
+              <option value="room">ค่าห้อง</option>
+              <option value="deposit">มัดจำ</option>
+              <option value="extra_bed">ค่าเตียงเสริม</option>
+              <option value="damage">ค่าเสียหาย</option>
+              <option value="mini_bar">มินิบาร์</option>
+              <option value="other">อื่น ๆ</option>
+            </select>
+          </label>
+          <label>Cashier
+            <input id="cashier" placeholder="ชื่อพนักงาน">
+          </label>
+        </div>
+
+        <label style="margin-top:8px">แนบสลิป
+          <input id="slip" type="file" accept="image/*">
+        </label>
+        <label style="margin-top:8px">หมายเหตุ
+          <textarea id="note" rows="3"></textarea>
+        </label>
+
+        <div class="actions" style="margin-top:8px">
+          <button class="btn" onclick="addPayment()">บันทึกรับเงิน</button>
+          <button class="btn" onclick="openExtraCharge()">เพิ่ม Extra Charge</button>
+          <button class="btn" onclick="openRefund()">Refund / คืนเงิน</button>
+          <button class="btn" onclick="printReceipt()">พิมพ์ใบเสร็จ</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-h">Daily Cashier / Shift Report แยกเงินสด-โอน-QR-บัตร-Refund</div>
+    <div class="panel-b">
+      <div class="filters">
+        <label>วันที่
+          <input id="reportDate" type="date">
+        </label>
+        <label>รายงานกะ
+          <select id="reportShift"></select>
+        </label>
+        <button class="btn" onclick="loadPayments()">Load Report</button>
+      </div>
+      <div id="summary" class="cards grid" style="margin-top:8px"></div>
+      <div class="panel" style="margin-top:8px">
+        <div class="panel-h">Shift Breakdown / แยกยอดตามกะและช่องทางรับเงิน</div>
+        <div class="panel-b table-wrap">
+          <table>
+            <thead><tr><th>Shift</th><th>Payment</th><th>Refund</th><th>Net</th><th>Cash</th><th>Transfer</th><th>QR</th><th>Credit Card</th><th>Room</th><th>Deposit</th><th>Extra Bed</th><th>Mini Bar</th><th>Damage</th><th>Other</th></tr></thead>
+            <tbody id="shiftBreakRows"></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="layout3" style="margin-top:8px">
+        <div class="panel">
+          <div class="panel-h">Payment List</div>
+          <div class="panel-b table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Receipt</th>
+                  <th>Booking</th>
+                  <th>Room</th>
+                  <th>Guest</th>
+                  <th>Category</th>
+                  <th>Shift</th>
+                  <th>Amount</th>
+                  <th>Method</th>
+                  <th>Slip</th>
+                  <th>Date</th>
+                </tr>
+              </thead>
+              <tbody id="payRows"></tbody>
+            </table>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-h">Refund List</div>
+          <div class="panel-b table-wrap">
+            <table>
+              <thead>
+                <tr><th>Refund</th><th>Booking</th><th>Guest</th><th>Shift</th><th>Amount</th><th>Method</th><th>Reason</th></tr>
+              </thead>
+              <tbody id="refundRows"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel" style="margin-top:8px">
+        <div class="panel-h">Closed Shift History</div>
+        <div class="panel-b table-wrap">
+          <table>
+            <thead>
+              <tr><th>Date</th><th>Shift</th><th>Cashier</th><th>Opening</th><th>Cash</th><th>Transfer</th><th>QR</th><th>Credit</th><th>Room</th><th>Deposit</th><th>Extras</th><th>Damage</th><th>Mini Bar</th><th>Refund</th><th>Expected</th><th>Closing</th><th>Diff</th><th>Net</th><th>Closed At</th></tr>
+            </thead>
+            <tbody id="shiftRows"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="modalBg" class="modal-bg">
+  <div class="modal">
+    <div class="modal-h">
+      <span id="modalTitle">Modal</span>
+      <button class="btn" onclick="closeModal()">Close</button>
+    </div>
+    <div class="modal-b" id="modalBody"></div>
+  </div>
+</div>
+
+<div class="print-area" id="printArea"></div>
+
+<script src="/public/app.js"></script>
+<script>
+active("cashier");
+let selectedId = null;
+let selectedBooking = null;
+let lastPayment = null;
+
+q("reportDate").value = today();
+q("workShift").innerHTML = shiftOptionsHtml(currentShift());
+q("reportShift").innerHTML = shiftOptionsHtml(currentShift(), true);
+q("reportShift").value = currentShift();
+
+function closeModal(){q("modalBg").style.display="none";q("modalBody").innerHTML=""}
+function showModal(title, html){q("modalTitle").textContent=title;q("modalBody").innerHTML=html;q("modalBg").style.display="flex"}
+function fileToBase64(file){
+  return new Promise(resolve=>{
+    if(!file) return resolve("");
+    const reader = new FileReader();
+    reader.onload = ()=>resolve(reader.result);
+    reader.readAsDataURL(file);
+  });
+}
+function payStatusText(s){
+  if(s==="paid") return "จ่ายครบ";
+  if(s==="partial") return "จ่ายบางส่วน";
+  return "ยังไม่จ่าย";
+}
+function payStatusClass(s){
+  if(s==="paid") return "INH";
+  if(s==="partial") return "CFM";
+  return "CXL";
+}
+
+async function searchBookings(){
+  let p = new URLSearchParams();
+  if(q("qtxt").value) p.set("q",q("qtxt").value);
+  let rows = await api("/api/guest-list?"+p.toString());
+  const filter = q("payFilter").value;
+  if(filter) rows = rows.filter(r=>r.payment_status===filter);
+
+  q("bookingRows").innerHTML = rows.filter(r=>r.status_code!=="CXL").slice(0,60).map(r=>`
+    <tr>
+      <td><b>${r.booking_no}</b></td>
+      <td>${r.room_no}</td>
+      <td>${r.guest_name}<br><span class="muted">${r.phone}</span></td>
+      <td>${money(r.total_amount)}</td>
+      <td>${money(r.paid_amount)}</td>
+      <td><b>${money(r.balance)}</b></td>
+      <td><span class="status ${payStatusClass(r.payment_status)}">${payStatusText(r.payment_status)}</span></td>
+      <td><button class="btn" onclick='selectBooking(${JSON.stringify(r)})'>Select</button></td>
+    </tr>
+  `).join("");
+}
+
+function selectBooking(r){
+  selectedId = r.id;
+  selectedBooking = r;
+  q("selected").innerHTML = `
+    <b>${r.booking_no}</b><br>
+    Room ${r.room_no}<br>
+    ${r.guest_name}<br>
+    Total: ${money(r.total_amount)}<br>
+    Paid: ${money(r.paid_amount)}<br>
+    Balance: <b>${money(r.balance)}</b><br>
+    Status: ${payStatusText(r.payment_status)}
+  `;
+  q("amount").value = r.balance > 0 ? r.balance : 0;
+}
+
+async function addPayment(){
+  if(!selectedId) return alert("กรุณาเลือก Booking");
+  const slip = await fileToBase64(q("slip").files[0]);
+  const payload = {
+    amount:Number(q("amount").value),
+    method:q("method").value,
+    category:q("category").value,
+    cashier_name:q("cashier").value,
+    shift_name:q("workShift").value,
+    note:q("note").value,
+    slip_base64:slip
+  };
+  lastPayment = await api(`/api/bookings/${selectedId}/payments`,{
+    method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body:JSON.stringify(payload)
+  });
+  alert("บันทึกรับเงินแล้ว: " + lastPayment.receipt_no);
+  q("note").value="";
+  q("slip").value="";
+  await searchBookings();
+  await loadPayments();
+}
+
+function openExtraCharge(){
+  if(!selectedId) return alert("กรุณาเลือก Booking");
+  showModal("เพิ่ม Extra Charge", `
+    <div class="card">
+      Booking: <b>${selectedBooking.booking_no}</b><br>
+      Guest: ${selectedBooking.guest_name}<br>
+      Balance เดิม: ${money(selectedBooking.balance)}
+    </div>
+    <div class="formgrid" style="margin-top:8px">
+      <label>ประเภท<select id="ex_type"><option value="extra_bed">ค่าเตียงเสริม</option><option value="mini_bar">มินิบาร์</option><option value="damage">ค่าเสียหาย</option><option value="other">อื่น ๆ</option></select></label>
+      <label>รายละเอียด<input id="ex_desc" placeholder="เช่น Extra Bed 1 เตียง / มินิบาร์"></label>
+      <label>จำนวน<input id="ex_qty" type="number" value="1"></label>
+      <label>ราคาต่อหน่วย<input id="ex_price" type="number" value="0"></label>
+    </div>
+    <div class="actions" style="margin-top:10px">
+      <button class="btn" onclick="saveExtraCharge()">บันทึก Extra Charge</button>
+    </div>
+  `);
+}
+async function saveExtraCharge(){
+  const payload={type:q("ex_type").value,description:q("ex_desc").value,qty:Number(q("ex_qty").value||1),unit_price:Number(q("ex_price").value||0)};
+  const res=await api(`/api/bookings/${selectedId}/extras`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});
+  closeModal();
+  alert("เพิ่ม Extra Charge แล้ว: "+money(res.extra.amount));
+  await searchBookings();
+  const rows=await api("/api/guest-list?q="+encodeURIComponent(selectedBooking.booking_no));
+  const r=rows.find(x=>x.id===selectedId); if(r) selectBooking(r);
+  await loadPayments();
+}
+
+function openRefund(){
+  if(!selectedId) return alert("กรุณาเลือก Booking");
+  showModal("Refund / คืนเงิน", `
+    <div class="card">
+      Booking: <b>${selectedBooking.booking_no}</b><br>
+      Guest: ${selectedBooking.guest_name}<br>
+      Paid: ${money(selectedBooking.paid_amount)}
+    </div>
+    <div class="formgrid" style="margin-top:8px">
+      <label>ยอดคืนเงิน<input id="rf_amount" type="number"></label>
+      <label>วิธีคืนเงิน<select id="rf_method"><option>Cash</option><option>Transfer</option><option>QR</option><option>Credit Card</option></select></label>
+      <label>Cashier<input id="rf_cashier" value="${q("cashier").value||""}"></label>
+      <label>เหตุผล<input id="rf_reason" placeholder="เช่น คืนมัดจำ / ยกเลิก"></label>
+    </div>
+    <div class="actions" style="margin-top:10px">
+      <button class="btn" onclick="saveRefund()">Confirm Refund</button>
+    </div>
+  `);
+}
+async function saveRefund(){
+  const payload = {
+    amount:Number(q("rf_amount").value),
+    method:q("rf_method").value,
+    cashier_name:q("rf_cashier").value,
+    shift_name:q("workShift").value,
+    reason:q("rf_reason").value
+  };
+  await api(`/api/bookings/${selectedId}/refunds`,{
+    method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body:JSON.stringify(payload)
+  });
+  closeModal();
+  alert("บันทึก Refund แล้ว");
+  await searchBookings();
+  await loadPayments();
+}
+
+async function loadPayments(){
+  const date = q("reportDate").value || today();
+  const shift = q("reportShift").value || "";
+  let d = await api(`/api/payments?date=${date}&from=${date}&to=${date}${shift?"&shift="+encodeURIComponent(shift):""}`);
+  const methodCards = Object.entries(d.by_method||{}).map(([k,v])=>`<div class="card"><h3>${k}</h3><div class="big">${money(v)}</div><div class="muted">รับเงิน</div></div>`).join("");
+  const refundCards = Object.entries(d.refund_by_method||{}).filter(([k,v])=>Number(v||0)>0).map(([k,v])=>`<div class="card"><h3>Refund ${k}</h3><div class="big">${money(v)}</div><div class="muted">คืนเงิน</div></div>`).join("");
+  const catCards = Object.entries(d.by_category||{}).map(([k,v])=>`<div class="card"><h3>${categoryName(k)}</h3><div class="big">${money(v)}</div><div class="muted">หมวดรายรับ</div></div>`).join("");
+  q("summary").innerHTML = `
+    <div class="card"><h3>Shift</h3><div class="big">${d.shift_name||"ทุกกะ"}</div></div>
+    <div class="card"><h3>Total Payment</h3><div class="big">${money(d.total)}</div><div class="muted">ยอดรับเงิน</div></div>
+    <div class="card"><h3>Refund</h3><div class="big">${money(d.refund_total)}</div><div class="muted">ยอดคืนเงิน</div></div>
+    <div class="card"><h3>Net Total</h3><div class="big">${money(d.net_total)}</div><div class="muted">รับเงิน - คืนเงิน</div></div>
+    <div class="card"><h3>รับล่วงหน้า</h3><div class="big">${money(d.advance_payment_total||0)}</div></div>
+    <div class="card"><h3>รับยอดค้างเก่า</h3><div class="big">${money(d.old_balance_payment_total||0)}</div></div>
+    ${methodCards}${refundCards}${catCards}
+  `;
+  q("shiftBreakRows").innerHTML = Object.entries(d.by_shift||{}).map(([sh,x])=>`
+    <tr><td><b>${sh}</b></td><td>${money(x.payment)}</td><td>${money(x.refund)}</td><td><b>${money(x.net)}</b></td><td>${money(x.by_method?.Cash)}</td><td>${money(x.by_method?.Transfer)}</td><td>${money(x.by_method?.QR)}</td><td>${money(x.by_method?.["Credit Card"])}</td><td>${money(x.by_category?.room)}</td><td>${money(x.by_category?.deposit)}</td><td>${money(x.by_category?.extra_bed)}</td><td>${money(x.by_category?.mini_bar)}</td><td>${money(x.by_category?.damage)}</td><td>${money(x.by_category?.other)}</td></tr>
+  `).join("");
+  q("payRows").innerHTML = d.payments.map(p=>`
+    <tr>
+      <td>${p.receipt_no}</td>
+      <td>${p.booking_no}</td>
+      <td>${p.room_no}</td>
+      <td>${p.guest_name}</td>
+      <td>${categoryName(p.category)}</td>
+      <td>${p.shift_name||"-"}</td>
+      <td>${money(p.amount)}</td>
+      <td>${p.method}</td>
+      <td>${p.slip_path ? `<a href="${p.slip_path}" target="_blank">ดูสลิป</a>` : "-"}</td>
+      <td>${p.created_at.slice(0,16).replace("T"," ")}</td>
+    </tr>
+  `).join("");
+  q("refundRows").innerHTML = d.refunds.map(r=>`
+    <tr><td>${r.refund_no}</td><td>${r.booking_no}</td><td>${r.guest_name}</td><td>${r.shift_name||"-"}</td><td>${money(r.amount)}</td><td>${r.method}</td><td>${r.reason||""}</td></tr>
+  `).join("");
+  q("shiftRows").innerHTML = d.shifts.map(s=>`
+    <tr><td>${s.date}</td><td>${s.shift_name||"-"}</td><td>${s.cashier_name}</td><td>${money(s.opening_cash)}</td><td>${money(s.by_method?.Cash)}</td><td>${money(s.by_method?.Transfer)}</td><td>${money(s.by_method?.QR)}</td><td>${money(s.by_method?.["Credit Card"])}</td><td>${money(s.by_category?.room)}</td><td>${money(s.by_category?.deposit)}</td><td>${money(s.by_category?.extra_bed)}</td><td>${money(s.by_category?.damage)}</td><td>${money(s.by_category?.mini_bar)}</td><td>${money(s.refund_total)}</td><td>${money(s.expected_closing_cash||0)}</td><td>${money(s.closing_cash)}</td><td><b>${money(s.cash_difference||0)}</b></td><td><b>${money(s.net_total)}</b></td><td>${s.closed_at.slice(0,16).replace("T"," ")}</td></tr>
+  `).join("");
+}
+function categoryName(k){
+  return ({room:"ค่าห้อง",deposit:"มัดจำ",extra_bed:"ค่าเตียงเสริม",damage:"ค่าเสียหาย",mini_bar:"มินิบาร์",other:"อื่น ๆ"}[k] || k || "ค่าห้อง");
+}
+
+function openCloseShift(){
+  showModal("ปิดรอบกะพนักงาน", `
+    <div class="formgrid">
+      <label>วันที่<input id="shift_date" type="date" value="${q("reportDate").value||today()}"></label>
+      <label>กะที่จะปิดรอบ<select id="shift_name">${shiftOptionsHtml(q("workShift").value||currentShift())}</select></label>
+      <label>Cashier<input id="shift_cashier" value="${q("cashier").value||""}"></label>
+      <label>เงินสดต้นกะ<input id="opening_cash" type="number" value="0"></label>
+      <label>เงินสดปลายกะ<input id="closing_cash" type="number" value="0"></label>
+    </div>
+    <label style="margin-top:8px">หมายเหตุ<textarea id="shift_note" rows="3"></textarea></label>
+    <div class="actions" style="margin-top:10px">
+      <button class="btn" onclick="saveCloseShift()">Confirm Close Shift</button>
+    </div>
+  `);
+}
+async function saveCloseShift(){
+  const payload = {
+    date:q("shift_date").value,
+    shift_name:q("shift_name").value,
+    cashier_name:q("shift_cashier").value,
+    opening_cash:Number(q("opening_cash").value),
+    closing_cash:Number(q("closing_cash").value),
+    note:q("shift_note").value
+  };
+  await api("/api/cashier/close-shift",{
+    method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body:JSON.stringify(payload)
+  });
+  closeModal();
+  alert("ปิดรอบกะเรียบร้อย");
+  await loadPayments();
+}
+
+async function printReceipt(){
+  if(!selectedId) return alert("กรุณาเลือก Booking");
+  const b = await api("/api/bookings/"+selectedId);
+  const payments = b.payments || [];
+  const latest = lastPayment || payments[payments.length-1] || {};
+  q("printArea").innerHTML = `
+    <div class="print-box">
+      <div class="print-title">ใบเสร็จรับเงิน / Receipt</div>
+      <table class="print-table">
+        <tr><td>Receipt No.</td><td>${latest.receipt_no||"-"}</td><td>Date</td><td>${(latest.created_at||new Date().toISOString()).slice(0,10)}</td></tr>
+        <tr><td>Booking No.</td><td>${b.booking_no}</td><td>Room</td><td>${b.room_no}</td></tr>
+        <tr><td>Guest Name</td><td colspan="3">${b.guest_name}</td></tr>
+        <tr><td>Category</td><td>${categoryName(latest.category)}</td><td>Method</td><td>${latest.method||""}</td></tr>
+        <tr><td>Amount</td><td>${money(latest.amount||0)}</td><td>Cashier</td><td>${latest.cashier_name||""}</td></tr>
+        <tr><td>Total Booking</td><td>${money(b.total_amount)}</td><td>Balance</td><td>${money(b.balance)}</td></tr>
+        <tr><td>Note</td><td colspan="3">${latest.note||""}</td></tr>
+      </table>
+      <div style="margin-top:50px;display:flex;justify-content:space-between">
+        <div>ผู้รับเงิน ____________________</div>
+        <div>ผู้ชำระเงิน ____________________</div>
+      </div>
+    </div>
+  `;
+  window.print();
+}
+
+const bid = new URLSearchParams(location.search).get("booking_id");
+async function boot(){
+  await searchBookings();
+  await loadPayments();
+  if(bid){
+    const rows = await api("/api/guest-list?q="+bid);
+    let r = rows.find(x=>String(x.id)===String(bid));
+    if(r) selectBooking(r);
+  }
+}
+boot();
+</script>
+</body>
+</html>
