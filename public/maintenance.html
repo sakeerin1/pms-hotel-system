@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Maintenance</title>
+  <link rel="stylesheet" href="/public/style.css">
+  <style>
+    .thumb{max-width:72px;max-height:54px;border:1px solid var(--line);background:#fff}
+    .mini-actions{display:flex;gap:4px;flex-wrap:wrap}
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <div class="panel">
+    <div class="panel-h">Maintenance / แจ้งซ่อม / ใบงานช่าง</div>
+    <div class="panel-b">
+      <div id="summary" class="cards"></div>
+
+      <div class="panel" style="margin-top:8px">
+        <div class="panel-h">เปิดใบงานแจ้งซ่อม</div>
+        <div class="panel-b">
+          <div class="formgrid">
+            <label>ประเภทงาน<select id="location_type" onchange="toggleLocation()"><option value="room">แจ้งซ่อมห้อง</option><option value="public">แจ้งซ่อมพื้นที่ส่วนกลาง</option></select></label>
+            <label>Room No<input id="room_no" placeholder="เช่น 201"></label>
+            <label>พื้นที่ส่วนกลาง<input id="area" placeholder="Lobby / Pool / Garden / Front"></label>
+            <label>Priority<select id="priority"><option>normal</option><option>urgent</option><option>high</option><option>low</option></select></label>
+            <label>หัวข้องานซ่อม<input id="title" placeholder="เช่น แอร์ไม่เย็น / น้ำรั่ว"></label>
+            <label>ผู้แจ้ง<input id="reported_by" placeholder="Housekeeping / Front / Manager"></label>
+            <label>ผู้รับผิดชอบ<input id="assigned_to" placeholder="ชื่อช่าง"></label>
+            <label>Due Date<input id="due_date" type="date"></label>
+            <label>Block Sale ตั้งแต่<input id="block_start_date" type="date"></label>
+            <label>Block Sale ถึงวันที่<input id="block_end_date" type="date"></label>
+            <label>ค่าใช้จ่ายซ่อม<input id="cost" type="number" value="0"></label>
+            <label><input type="checkbox" id="mark_ooo" checked> เชื่อม OOO/OOS และปิดขายห้อง</label>
+          </div>
+          <label style="margin-top:8px">รายละเอียด<textarea id="detail" rows="3" placeholder="รายละเอียดอาการเสีย / จุดที่ต้องซ่อม"></textarea></label>
+          <label style="margin-top:8px">แนบรูปก่อนซ่อม<input id="photo_before" type="file" accept="image/*"></label>
+          <div class="actions" style="margin-top:8px">
+            <button class="btn" onclick="createTicket()">Create Work Order / ออกใบงาน</button>
+            <button class="btn" onclick="load()">Refresh</button>
+          </div>
+          <div class="note">สถานะงานมาตรฐาน: New → In Progress → Waiting Parts → Done / Cancelled | ถ้าเป็นงานห้องและติ๊กปิดขาย ระบบจะเชื่อมกับ OOO/OOS และ Availability อัตโนมัติ</div>
+        </div>
+      </div>
+
+      <div class="panel" style="margin-top:8px">
+        <div class="panel-h">ประวัติซ่อมรายห้อง</div>
+        <div class="panel-b">
+          <div class="filters"><label>Room No<input id="historyRoom" placeholder="เช่น 201"></label><button class="btn" onclick="loadRoomHistory()">ดูประวัติห้อง</button></div>
+          <div id="roomHistory" class="table-wrap" style="margin-top:8px"></div>
+        </div>
+      </div>
+
+      <div class="table-wrap" style="margin-top:8px">
+        <table>
+          <thead><tr><th>Work Order</th><th>ประเภท/สถานที่</th><th>Issue</th><th>Priority</th><th>Status</th><th>Block Period</th><th>Assigned</th><th>Cost</th><th>รูปก่อน/หลัง</th><th>Solution</th><th>Action</th></tr></thead>
+          <tbody id="rows"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+<script src="/public/app.js"></script>
+<script>
+active("maintenance");
+q("due_date").value=today();
+q("block_start_date").value=today();
+q("block_end_date").value=today();
+function esc(v){return String(v??"").replace(/[&<>\"]/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[m]))}
+function statusesHtml(cur){return ["New","In Progress","Waiting Parts","Done","Cancelled"].map(x=>`<option ${cur===x?"selected":""}>${x}</option>`).join("")}
+function toggleLocation(){
+  const room = q("location_type").value === "room";
+  q("room_no").disabled = !room;
+  q("mark_ooo").disabled = !room;
+  q("area").disabled = room;
+}
+toggleLocation();
+async function createTicket(){
+ const photo=await fileToBase64(q("photo_before").files[0]);
+ const payload={
+   location_type:q("location_type").value,
+   room_no:q("location_type").value==="room" ? q("room_no").value : "",
+   area:q("location_type").value==="public" ? q("area").value : "",
+   title:q("title").value,
+   detail:q("detail").value,
+   priority:q("priority").value,
+   reported_by:q("reported_by").value,
+   assigned_to:q("assigned_to").value,
+   due_date:q("due_date").value,
+   cost:Number(q("cost").value),
+   mark_ooo:q("location_type").value==="room" && q("mark_ooo").checked,
+   block_sale:q("location_type").value==="room" && q("mark_ooo").checked,
+   block_start_date:q("block_start_date").value || today(),
+   block_end_date:q("block_end_date").value || q("block_start_date").value || today(),
+   photo_before_base64:photo
+ };
+ if(!payload.title) return alert("กรุณาระบุหัวข้องานซ่อม");
+ if(payload.location_type==="room" && !payload.room_no) return alert("กรุณาระบุเลขห้อง");
+ if(payload.location_type==="public" && !payload.area) return alert("กรุณาระบุพื้นที่ส่วนกลาง");
+ if(payload.block_end_date < payload.block_start_date) return alert("วันที่ Block Sale สิ้นสุดต้องไม่ก่อนวันเริ่มต้น");
+ await api("/api/maintenance",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});
+ ["room_no","area","title","detail","assigned_to","reported_by"].forEach(id=>q(id).value="");
+ q("cost").value=0;q("photo_before").value="";load();
+}
+async function load(){
+ const sum=await api("/api/maintenance/summary");
+ q("summary").innerHTML=`<div class="card"><b>Open Work Orders</b><h2>${sum.open}</h2></div><div class="card"><b>Total</b><h2>${sum.total}</h2></div><div class="card"><b>Cost Open</b><h2>${money(sum.cost_open||0)}</h2></div><div class="card"><b>Cost Done</b><h2>${money(sum.cost_done||0)}</h2></div><div class="card"><b>Status</b><div>${Object.entries(sum.by_status||{}).map(([k,v])=>`${esc(k)}: ${v}`).join(" | ")}</div></div>`;
+ const rows=await api("/api/maintenance");
+ q("rows").innerHTML=rows.map(t=>`
+  <tr>
+    <td><b>${esc(t.work_order_no||t.ticket_no)}</b><br><span class="muted">${esc(t.ticket_no)} / ${esc((t.created_at||"").slice(0,10))}</span><br><a href="/public/work-order.html?id=${t.id}" target="_blank">พิมพ์ใบงาน</a></td>
+    <td>${t.location_type==="public"?"พื้นที่ส่วนกลาง":"ห้อง"}<br><b>${esc(t.room_no||t.area||"-")}</b></td>
+    <td>${esc(t.title)}<br><span class="muted">${esc(t.detail||"")}</span></td>
+    <td>${esc(t.priority)}</td>
+    <td><select id="status_${t.id}">${statusesHtml(t.status)}</select></td>
+    <td>${t.room_no && t.block_sale!==false?`${esc(t.block_start_date||"")} ถึง ${esc(t.block_end_date||"")}`:"ไม่ปิดขาย"}</td>
+    <td><input id="assign_${t.id}" value="${esc(t.assigned_to||"")}" style="min-width:110px"></td>
+    <td><input id="cost_${t.id}" type="number" value="${Number(t.cost||0)}" style="width:90px"></td>
+    <td>${t.photo_before?`<a href="${t.photo_before}" target="_blank"><img class="thumb" src="${t.photo_before}"></a>`:"-"}<br>${t.photo_after?`<a href="${t.photo_after}" target="_blank"><img class="thumb" src="${t.photo_after}"></a>`:"ยังไม่มีรูปหลัง"}<br><input id="after_${t.id}" type="file" accept="image/*" style="max-width:130px"></td>
+    <td><textarea id="solution_${t.id}" rows="2" placeholder="วิธีแก้ / หมายเหตุ">${esc(t.solution||"")}</textarea></td>
+    <td><div class="mini-actions"><button class="btn" onclick="saveTicket(${t.id})">Save</button>${t.room_no?`<button class="btn" onclick="q('historyRoom').value='${esc(t.room_no)}';loadRoomHistory()">History</button>`:""}</div></td>
+  </tr>`).join("");
+}
+async function saveTicket(id){
+ const after=await fileToBase64(q("after_"+id).files[0]);
+ const payload={status:q("status_"+id).value,assigned_to:q("assign_"+id).value,cost:Number(q("cost_"+id).value),solution:q("solution_"+id).value};
+ if(after) payload.photo_after_base64=after;
+ await api("/api/maintenance/"+id,{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});
+ await load();
+ if(q("historyRoom").value) await loadRoomHistory();
+}
+async function loadRoomHistory(){
+ const room=q("historyRoom").value.trim(); if(!room)return alert("ระบุเลขห้องก่อน");
+ const h=await api("/api/maintenance/room-history?room_no="+encodeURIComponent(room));
+ q("roomHistory").innerHTML=`<div class="card"><b>Room ${esc(room)}</b> | ใบงาน ${h.total_tickets} รายการ | ค่าใช้จ่ายรวม ${money(h.cost_total||0)}</div><table><thead><tr><th>Date</th><th>Work Order</th><th>Issue</th><th>Status</th><th>Cost</th><th>Solution</th><th>Before/After</th></tr></thead><tbody>${(h.tickets||[]).map(t=>`<tr><td>${esc((t.created_at||"").slice(0,10))}</td><td>${esc(t.work_order_no||t.ticket_no)}</td><td>${esc(t.title)}<br><span class="muted">${esc(t.detail||"")}</span></td><td>${esc(t.status)}</td><td>${money(t.cost||0)}</td><td>${esc(t.solution||"")}</td><td>${t.photo_before?`<a href="${t.photo_before}" target="_blank">ก่อน</a>`:"-"} / ${t.photo_after?`<a href="${t.photo_after}" target="_blank">หลัง</a>`:"-"}</td></tr>`).join("")}</tbody></table>`;
+}
+load();
+</script>
+</body>
+</html>
