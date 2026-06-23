@@ -1,0 +1,67 @@
+﻿<!doctype html>
+<html lang="th">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Booking Detail</title><link rel="stylesheet" href="/public/style.css"></head>
+<body>
+<div class="wrap">
+  <div class="panel"><div class="panel-h">Booking Detail / Folio / Log</div><div class="panel-b">
+    <div class="filters"><label>Booking ID<input id="bookingId"></label><button class="btn" onclick="load()">Load</button><a class="btn" id="payLink" href="/public/front-cashier.html">Payment</a><a class="btn" href="/public/front-desk.html">Front Desk</a></div>
+    <div id="main" style="margin-top:8px"></div>
+  </div></div>
+</div>
+<script src="/public/app.js"></script>
+<script>
+active("bookingdetail");
+q("bookingId").value=new URLSearchParams(location.search).get("booking_id")||"";
+function row(k,v){return `<tr><td><b>${esc(k)}</b></td><td>${v??""}</td></tr>`}
+async function load(){
+  const id=q("bookingId").value; if(!id)return alert("ใส่ Booking ID");
+  const b=await api("/api/bookings/"+id); q("payLink").href="/public/front-cashier.html?booking_id="+id;
+  q("main").innerHTML=`
+  <div class="layout3">
+    <div class="panel"><div class="panel-h">ข้อมูลการจอง</div><div class="panel-b table-wrap"><table><tbody>
+      ${row("Booking No",b.booking_no)}${row("Guest",b.guest_name)}${row("Phone",b.phone)}${row("Room",b.room_no)}${row("Stay",b.checkin+" → "+b.checkout)}${row("Status",b.status)}${row("Agent",b.agent)}${row("Promo",(b.promo_code||"-")+" / Discount "+money(b.discount_amount||0))}${row("Extra",money(b.extra_amount||0))}${row("Total",money(b.total_amount))}${row("Paid",money(b.paid_amount))}${row("Balance",money(b.balance))}${row("Note",b.note||"")}
+    </tbody></table></div></div>
+    <div class="panel"><div class="panel-h">Action</div><div class="panel-b"><div class="actions">
+      <button class="btn" onclick="setStatus(${id},'checked_in')">Check-in</button>
+      <button class="btn" onclick="checkout(${id})">Check-out</button>
+      <button class="btn" onclick="setStatus(${id},'cancelled')">Cancel</button>
+      <button class="btn" onclick="showExtraForm(${id})">เพิ่ม Extra</button>
+      <a class="btn" href="/public/invoice.html?booking_id=${id}">Invoice</a>
+    </div></div></div>
+  </div>
+  <div class="layout3">
+    <div class="panel"><div class="panel-h">Payments</div><div class="panel-b table-wrap"><table><thead><tr><th>Receipt</th><th>Amount</th><th>Method</th><th>Category</th><th>Date</th></tr></thead><tbody>${(b.payments||[]).map(p=>`<tr><td>${p.receipt_no}</td><td>${money(p.amount)}</td><td>${p.method}</td><td>${p.category||"room"}</td><td>${(p.created_at||"").slice(0,16).replace("T"," ")}</td></tr>`).join("")}</tbody></table></div></div>
+    <div class="panel"><div class="panel-h">Refunds</div><div class="panel-b table-wrap"><table><thead><tr><th>Refund</th><th>Amount</th><th>Method</th><th>Reason</th></tr></thead><tbody>${(b.refunds||[]).map(r=>`<tr><td>${r.refund_no}</td><td>${money(r.amount)}</td><td>${r.method}</td><td>${r.reason||""}</td></tr>`).join("")}</tbody></table></div></div>
+  </div>
+  <div class="panel"><div class="panel-h">Extra Charges / ค่าใช้จ่ายเพิ่มเติม</div><div class="panel-b">
+    <div id="extraForm" class="card" style="display:none;margin-bottom:8px"></div>
+    <div class="table-wrap"><table><thead><tr><th>Type</th><th>Description</th><th>Qty</th><th>Unit</th><th>Amount</th><th>Created</th></tr></thead><tbody>${(b.extras||[]).map(x=>`<tr><td>${extraName(x.type)}</td><td>${x.description||""}</td><td>${x.qty||1}</td><td>${money(x.unit_price||0)}</td><td><b>${money(x.amount)}</b></td><td>${(x.created_at||"").slice(0,16).replace("T"," ")}</td></tr>`).join("")}</tbody></table></div>
+  </div></div>
+  <div class="panel"><div class="panel-h">Room Move History</div><div class="panel-b table-wrap">
+    <table><thead><tr><th>Moved At</th><th>From</th><th>To</th><th>By</th><th>Reason</th></tr></thead><tbody>${(b.room_moves||[]).map(m=>`<tr><td>${esc((m.moved_at||"").slice(0,16).replace("T"," "))}</td><td>${esc(m.from_room_no)}</td><td><b>${esc(m.to_room_no)}</b></td><td>${esc(m.moved_by||"")}</td><td>${esc(m.reason||"")}</td></tr>`).join("") || '<tr><td colspan="5" class="muted">No room move history</td></tr>'}</tbody></table>
+  </div></div>`;
+}
+function extraName(k){return ({extra_bed:"ค่าเตียงเสริม",mini_bar:"มินิบาร์",damage:"ค่าเสียหาย",other:"อื่น ๆ"}[k]||k||"อื่น ๆ")}
+function showExtraForm(id){
+  const box=q("extraForm"); if(!box)return;
+  box.style.display="block";
+  box.innerHTML=`<div class="formgrid">
+    <label>ประเภท<select id="ex_type"><option value="extra_bed">ค่าเตียงเสริม</option><option value="mini_bar">มินิบาร์</option><option value="damage">ค่าเสียหาย</option><option value="other">อื่น ๆ</option></select></label>
+    <label>รายละเอียด<input id="ex_desc" placeholder="รายละเอียด"></label>
+    <label>จำนวน<input id="ex_qty" type="number" value="1"></label>
+    <label>ราคาต่อหน่วย<input id="ex_price" type="number" value="0"></label>
+  </div><div class="actions" style="margin-top:8px"><button class="btn" onclick="saveExtra(${id})">บันทึก Extra</button></div>`;
+}
+async function saveExtra(id){
+  const payload={type:q("ex_type").value,description:q("ex_desc").value,qty:Number(q("ex_qty").value||1),unit_price:Number(q("ex_price").value||0)};
+  const res=await api(`/api/bookings/${id}/extras`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});
+  alert("เพิ่ม Extra แล้ว: "+money(res.extra.amount));
+  await load();
+}
+
+async function setStatus(id,status,force=false){await api(`/api/bookings/${id}/status`,{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({status,force})}); await load();}
+async function checkout(id){const b=await api("/api/bookings/"+id); const force=Number(b.balance)>0; if(force&&!confirm("ยังค้างชำระ "+money(b.balance)+" ต้องการ Check-out ต่อหรือไม่?"))return; await setStatus(id,"checked_out",force)}
+if(q("bookingId").value)load();
+</script>
+</body></html>
+
