@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Housekeeping</title>
+  <link rel="stylesheet" href="/public/style.css">
+  <style>
+    .hk-card{border:1px solid #83b2b4;background:#f7ffff;padding:10px;margin-bottom:8px}
+    .hk-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
+    .priority-urgent{border-left:8px solid #ff3b30}
+    .priority-checkout{border-left:8px solid #ffcc00}
+    .priority-blocked{border-left:8px solid #555}
+    .mobile-room{font-size:18px;font-weight:700}
+    @media(max-width:900px){.hk-grid{grid-template-columns:1fr}.table-wrap{max-height:none}}
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <div class="panel">
+    <div class="panel-h">Housekeeping / Room Status</div>
+    <div class="panel-b">
+      <div id="summary" class="cards grid"></div>
+      <div class="actions" style="margin:8px 0">
+        <button class="btn" onclick="setFilter('all')">All</button>
+        <button class="btn" onclick="setFilter('todo')">ห้องต้องทำวันนี้</button>
+        <button class="btn" onclick="setFilter('checkout')">Check-out วันนี้</button>
+        <button class="btn" onclick="setFilter('arrival')">Arrival วันนี้</button>
+        <button class="btn" onclick="setFilter('urgent')">VIP / เร่งด่วน</button>
+        <button class="btn" onclick="setView('table')">Table View</button>
+        <button class="btn" onclick="setView('mobile')">Mobile View</button>
+      </div>
+
+      <div id="tableView" class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Room</th>
+              <th>Type</th>
+              <th>HK Status</th>
+              <th>Departure Today</th>
+              <th>Arrival Today</th>
+              <th>Occupied</th>
+              <th>Priority</th>
+              <th>Change Status</th>
+              <th>บันทึกของเสีย/ซ่อม/ของหาย</th>
+              <th>Notes</th>
+            </tr>
+          </thead>
+          <tbody id="rows"></tbody>
+        </table>
+      </div>
+
+      <div id="mobileView" class="hk-grid" style="display:none"></div>
+    </div>
+  </div>
+</div>
+
+<script src="/public/app.js"></script>
+<script>
+active("hk");
+let hkData = null;
+let filterMode = "all";
+let viewMode = "table";
+
+function setFilter(mode){filterMode=mode;render()}
+function setView(mode){viewMode=mode;render()}
+
+function statusOptions(current){
+  return ["VC","VD","OCC","OOO","OOS","Inspected"].map(s=>`<option value="${s}" ${s===current?"selected":""}>${s}</option>`).join("");
+}
+function passFilter(r){
+  if(filterMode==="todo") return ["VD","OCC"].includes(r.housekeeping_status) || r.is_departure_today || r.is_arrival_today;
+  if(filterMode==="checkout") return r.is_departure_today;
+  if(filterMode==="arrival") return r.is_arrival_today;
+  if(filterMode==="urgent") return r.is_arrival_today || r.is_vip || r.priority==="urgent";
+  return true;
+}
+async function load(){
+  hkData = await api("/api/housekeeping");
+  render();
+}
+function render(){
+  if(!hkData) return;
+  q("summary").innerHTML = ["VC","VD","OCC","OOO","OOS","Inspected"].map(s=>`
+    <div class="card"><h3>${s}</h3><div class="big">${hkData.summary[s]||0}</div></div>
+  `).join("");
+  const rows = hkData.rows.filter(passFilter);
+
+  q("tableView").style.display = viewMode==="table" ? "block" : "none";
+  q("mobileView").style.display = viewMode==="mobile" ? "grid" : "none";
+
+  q("rows").innerHTML = rows.map(r=>`
+    <tr>
+      <td><b>${r.room_no}</b></td>
+      <td>${r.room_type_code}<br>${r.room_type_name}</td>
+      <td><b>${r.housekeeping_status}</b></td>
+      <td>${r.is_departure_today ? r.departure_guest : "-"}</td>
+      <td>${r.is_arrival_today ? r.arrival_guest : "-"}</td>
+      <td>${r.occupied_guest || "-"}</td>
+      <td>${r.priority}</td>
+      <td>
+        <select onchange="changeStatus('${r.room_no}',this.value)">
+          ${statusOptions(r.housekeeping_status)}
+        </select>
+      </td>
+      <td>
+        <div class="actions">
+          <button class="btn" onclick="openNote('${r.room_no}','damage')">ของเสีย</button>
+          <button class="btn" onclick="openNote('${r.room_no}','lost_found')">ของหาย</button>
+          <button class="btn" onclick="openNote('${r.room_no}','repair')">แจ้งซ่อม</button>
+        </div>
+      </td>
+      <td>${(r.notes||[]).map(n=>`<div>${n.type}: ${n.detail} (${n.status})</div>`).join("")}</td>
+    </tr>
+  `).join("");
+
+  q("mobileView").innerHTML = rows.map(r=>`
+    <div class="hk-card priority-${r.priority}">
+      <div class="mobile-room">Room ${r.room_no}</div>
+      <div>${r.room_type_code} - ${r.room_type_name}</div>
+      <div>HK: <b>${r.housekeeping_status}</b></div>
+      <div>Departure: ${r.is_departure_today ? r.departure_guest : "-"}</div>
+      <div>Arrival: ${r.is_arrival_today ? r.arrival_guest : "-"}</div>
+      <label style="margin-top:8px">เปลี่ยนสถานะ
+        <select onchange="changeStatus('${r.room_no}',this.value)">
+          ${statusOptions(r.housekeeping_status)}
+        </select>
+      </label>
+      <div class="actions" style="margin-top:8px">
+        <button class="btn" onclick="openNote('${r.room_no}','damage')">ของเสีย</button>
+        <button class="btn" onclick="openNote('${r.room_no}','lost_found')">ของหาย</button>
+        <button class="btn" onclick="openNote('${r.room_no}','repair')">แจ้งซ่อม</button>
+      </div>
+      <div class="muted" style="margin-top:6px">${(r.notes||[]).map(n=>`${n.type}: ${n.detail}`).join("<br>")}</div>
+    </div>
+  `).join("");
+}
+async function changeStatus(room,status){
+  await api(`/api/rooms/${room}/housekeeping`,{
+    method:"PATCH",
+    headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({housekeeping_status:status})
+  });
+  await load();
+}
+function fileToBase64(file){
+  return new Promise(resolve=>{
+    if(!file) return resolve("");
+    const reader = new FileReader();
+    reader.onload = ()=>resolve(reader.result);
+    reader.readAsDataURL(file);
+  });
+}
+function openNote(room,type){
+  const detail = prompt(`บันทึก ${type} ห้อง ${room}`);
+  if(!detail) return;
+  saveNote(room,type,detail);
+}
+async function saveNote(room,type,detail){
+  await api("/api/housekeeping/notes",{
+    method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({
+      room_no:room,
+      type,
+      detail,
+      priority:type==="repair" ? "urgent" : "normal",
+      created_by:"housekeeping"
+    })
+  });
+  await load();
+}
+load();
+</script>
+</body>
+</html>
