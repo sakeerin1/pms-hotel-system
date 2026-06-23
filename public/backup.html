@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Backup / Restore</title>
+  <link rel="stylesheet" href="/public/style.css">
+</head>
+<body>
+<div class="wrap">
+  <div class="panel">
+    <div class="panel-h">Backup / Restore / Auto Backup</div>
+    <div class="panel-b">
+      <div id="statusBox" class="cards"></div>
+
+      <div class="panel" style="margin-top:8px">
+        <div class="panel-h">ตั้งค่าโฟลเดอร์สำรองข้อมูล</div>
+        <div class="panel-b">
+          <div class="formgrid">
+            <label>Backup Folder Path<input id="backup_custom_dir" placeholder="เช่น D:\\HotelPMS_Backup หรือ E:\\PMS_Backup"></label>
+            <label>Auto Backup<select id="auto_backup_enabled"><option value="true">เปิด</option><option value="false">ปิด</option></select></label>
+            <label>เวลา Auto Backup<input id="auto_backup_time" type="time" value="02:00"></label>
+            <label>แจ้งเตือนถ้าไม่ Backup เกินกี่ชั่วโมง<input id="backup_warning_hours" type="number" value="24"></label>
+          </div>
+          <div class="actions" style="margin-top:8px">
+            <button class="btn" onclick="saveSettings()">Save Backup Settings</button>
+            <button class="btn" onclick="load()">Refresh Status</button>
+          </div>
+          <div class="note">สำหรับ Windows แนะนำตั้งเป็น Drive D: หรือ Flash Drive เช่น <b>D:\HotelPMS_Backup</b> หรือ <b>E:\PMS_Backup</b> เพื่อกันข้อมูลหายเมื่อ Drive C: / เครื่องหลักเสีย</div>
+        </div>
+      </div>
+
+      <div class="panel" style="margin-top:8px">
+        <div class="panel-h">Manual Backup / Export Database</div>
+        <div class="panel-b">
+          <div class="actions">
+            <button class="btn" onclick="createBackup()">Backup Manual เข้าโฟลเดอร์สำรอง</button>
+            <a class="btn" href="/api/backup/export-db">Export Database .json</a>
+            <button class="btn" onclick="load()">Refresh List</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel" style="margin-top:8px">
+        <div class="panel-h">Restore จากไฟล์ Backup</div>
+        <div class="panel-b">
+          <input id="restoreFile" type="file" accept=".json">
+          <button class="btn danger" onclick="restore()">Restore Now</button>
+          <div class="note">ระบบจะสำรองข้อมูลปัจจุบันก่อน Restore ให้อัตโนมัติ แต่ควรตรวจสอบไฟล์ให้ถูกโรงแรมก่อนกด Restore</div>
+        </div>
+      </div>
+
+
+      <div class="panel" style="margin-top:8px">
+        <div class="panel-h">Reset / ล้างข้อมูลทดลองก่อนเริ่มใช้งานจริง</div>
+        <div class="panel-b">
+          <div id="resetPreview" class="cards"></div>
+          <div class="note"><b>ล้างเฉพาะข้อมูลปฏิบัติงาน</b>: Booking, ชื่อลูกค้า, Payment, Refund, Extra Charge, รายได้, Shift, Night Audit, Housekeeping Note, Maintenance, Block Sale และ CRM ลูกค้า แต่ยังเก็บข้อมูลโรงแรม ห้อง ราคา ผู้ใช้งาน โลโก้ และ Setup ไว้ ระบบจะ Backup อัตโนมัติก่อนล้างข้อมูล</div>
+          <div class="formgrid" style="margin-top:8px">
+            <label>พิมพ์คำยืนยัน <b>CLEAR DEMO DATA</b><input id="resetConfirm" placeholder="CLEAR DEMO DATA"></label>
+          </div>
+          <div class="actions" style="margin-top:8px">
+            <button class="btn danger" onclick="clearDemoData()">ล้างข้อมูลทดลอง / เริ่มใช้งานใหม่</button>
+            <button class="btn" onclick="loadResetPreview()">Refresh Preview</button>
+          </div>
+        </div>
+      </div>
+      <div class="table-wrap" style="margin-top:8px">
+        <table>
+          <thead><tr><th>File</th><th>Backup Folder</th><th>Size</th><th>Modified</th><th>Action</th></tr></thead>
+          <tbody id="rows"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+<script src="/public/app.js"></script>
+<script>
+active("backup");
+function esc(v){return String(v??"").replace(/[&<>\"]/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[m]))}
+async function saveSettings(){
+ const payload={
+  backup_custom_dir:q("backup_custom_dir").value,
+  auto_backup_enabled:q("auto_backup_enabled").value,
+  auto_backup_time:q("auto_backup_time").value,
+  backup_warning_hours:Number(q("backup_warning_hours").value||24)
+ };
+ const st=await api("/api/backup/settings",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});
+ alert(st.writable?"บันทึกการตั้งค่า Backup แล้ว":"บันทึกแล้ว แต่โฟลเดอร์นี้อาจเขียนไม่ได้ กรุณาตรวจ Drive/Flash Drive");
+ load();
+}
+async function createBackup(){let b=await api("/api/backup/create",{method:"POST"});alert("Backup สำเร็จ: "+b.file+"\nFolder: "+b.backup_dir);load()}
+async function load(){
+ let st=await api("/api/backup/status");
+ q("backup_custom_dir").value=st.backup_dir && !st.backup_dir.includes("data") ? st.backup_dir : "";
+ q("auto_backup_enabled").value=String(st.auto_backup_enabled);
+ q("auto_backup_time").value=st.auto_backup_time||"02:00";
+ q("backup_warning_hours").value=st.backup_warning_hours||24;
+ q("statusBox").innerHTML=`
+  <div class="card"><b>Backup Folder</b><div>${esc(st.backup_dir)}</div><div class="muted">${st.writable?"พร้อมเขียนไฟล์":"เขียนไฟล์ไม่ได้"}</div></div>
+  <div class="card"><b>Last Backup</b><h2>${st.last_backup?esc(st.last_backup.modified_at.slice(0,19).replace('T',' ')):"-"}</h2></div>
+  <div class="card"><b>Status</b><div style="color:${st.warning?'#b00020':'#0a6'}">${st.warning?esc(st.warning):"Backup ปกติ"}</div><div class="muted">Auto: ${st.auto_backup_enabled?"เปิด":"ปิด"} / ${esc(st.auto_backup_time)}</div></div>`;
+ let rows=await api("/api/backups");
+ q("rows").innerHTML=rows.map(b=>`<tr><td>${esc(b.file)}</td><td>${esc(b.backup_dir||"")}</td><td>${Number(b.size||0).toLocaleString()}</td><td>${esc(b.modified_at)}</td><td><a class="btn" href="/api/backup/file?file=${encodeURIComponent(b.file)}">Download</a> <button class="btn danger" onclick="restoreFromList('${String(b.file).replace(/'/g,"\\'")}')">Restore รายการนี้</button></td></tr>`).join("")
+}
+async function restore(){
+ const f=q("restoreFile").files[0]; if(!f)return alert("เลือกไฟล์ backup ก่อน");
+ const text=await f.text(); if(!confirm("ยืนยัน Restore? ข้อมูลปัจจุบันจะถูกแทนที่"))return;
+ await fetch("/api/restore",{method:"POST",headers:{"Content-Type":"application/json"},body:text}).then(async r=>{if(!r.ok)throw new Error(await r.text())});
+ alert("Restore สำเร็จ กรุณาปิดเปิดระบบใหม่"); load();
+}
+async function restoreFromList(file){if(!confirm("ยืนยัน Restore จากไฟล์ " + file + " ?"))return;await api("/api/restore-from-backup",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({file})});alert("Restore สำเร็จ กรุณาปิดเปิดระบบใหม่");load();}
+
+async function loadResetPreview(){
+ const p=await api("/api/reset/preview");
+ q("resetPreview").innerHTML=`<div class="card"><b>Bookings</b><h2>${p.bookings}</h2></div><div class="card"><b>Guests/CRM</b><h2>${p.customer_profiles}</h2></div><div class="card"><b>Payments</b><h2>${p.payments}</h2></div><div class="card"><b>Total Payment</b><h2>${money(p.total_payment||0)}</h2></div><div class="card"><b>Maintenance</b><h2>${p.maintenance_tickets}</h2></div><div class="card"><b>Shift/Night Audit</b><h2>${p.cashier_shifts}/${p.night_audits}</h2></div>`;
+}
+async function clearDemoData(){
+ const confirmText=q("resetConfirm").value;
+ if(confirmText!=="CLEAR DEMO DATA") return alert("กรุณาพิมพ์ CLEAR DEMO DATA ให้ตรงก่อนล้างข้อมูล");
+ if(!confirm("ยืนยันล้างข้อมูลทดลองทั้งหมด? ระบบจะ Backup ก่อนล้าง และยังเก็บ Setup/ห้อง/ราคา/ผู้ใช้งานไว้")) return;
+ const r=await api("/api/reset/operational-data",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({confirm:confirmText})});
+ alert(r.message+"
+Backup: "+(r.backup?.file||""));
+ q("resetConfirm").value="";
+ await load(); await loadResetPreview();
+}
+load();
+loadResetPreview();
+</script>
+</body>
+</html>
