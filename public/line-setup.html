@@ -1,0 +1,20 @@
+<!doctype html><html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>LINE Setup</title><link rel="stylesheet" href="/public/style.css"></head><body>
+<div class="wrap"><div class="panel"><div class="panel-h">LINE OA / LIFF Integration Setup</div><div class="panel-b">
+<div class="card"><b>หมายเหตุ:</b> ถ้าจะเชื่อม LINE จริง ต้องนำระบบขึ้น HTTPS เช่น VPS / Cloudflare Tunnel / Domain แล้วตั้ง Webhook URL เป็น <b>/line/webhook</b></div>
+<div class="formgrid" style="margin-top:8px">
+<label>LINE Channel Access Token<input id="line_channel_access_token"></label>
+<label>LINE Channel Secret<input id="line_channel_secret"></label>
+<label>LIFF ID<input id="line_liff_id"></label>
+<label>Admin LINE User ID<input id="line_admin_user_id"></label>
+</div>
+<label style="margin-top:8px">Booking Message Template<textarea id="line_booking_message" rows="3"></textarea></label>
+<div class="actions" style="margin-top:8px"><button class="btn" onclick="save()">Save LINE Settings</button><button class="btn" onclick="preview()">Preview Message</button></div>
+<div id="preview" style="margin-top:8px"></div>
+</div></div></div>
+<script src="/public/app.js"></script><script>
+active("line");
+async function load(){let s=await api("/api/settings");["line_channel_access_token","line_channel_secret","line_liff_id","line_admin_user_id","line_booking_message"].forEach(k=>q(k).value=s[k]||"")}
+async function save(){const payload={line_channel_access_token:q("line_channel_access_token").value,line_channel_secret:q("line_channel_secret").value,line_liff_id:q("line_liff_id").value,line_admin_user_id:q("line_admin_user_id").value,line_booking_message:q("line_booking_message").value};await api("/api/settings",{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});alert("Saved")}
+async function preview(){let d=await api("/api/line-preview?booking_no=BK2026-00001");q("preview").innerHTML=`<div class="card"><b>Preview:</b><br>${d.message}<br><br>LIFF ID: ${d.liff_id||"-"}<br>Webhook: ${d.webhook_url}</div>`}
+load();
+</script></body></html>
