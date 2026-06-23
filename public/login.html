@@ -1,0 +1,14 @@
+<!doctype html><html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Login</title><link rel="stylesheet" href="/public/style.css"></head><body>
+<div class="wrap"><div class="panel" style="max-width:520px;margin:auto"><div class="panel-h">Login / เข้าสู่ระบบ</div><div class="panel-b">
+<div class="card"><b>Demo Users</b><br>admin / admin123<br>manager / manager123<br>front / front123<br>cashier / cashier123<br>hk / hk123<br>maint / maint123</div>
+<label style="margin-top:8px">Username<input id="username" value="admin"></label>
+<label>Password<input id="password" type="password" value="admin123"></label>
+<div class="actions" style="margin-top:8px"><button class="btn" onclick="login()">Login</button><button class="btn" onclick="logout()">Logout</button><button class="btn" onclick="me()">Check User</button></div>
+<div id="result" style="margin-top:8px"></div>
+</div></div></div>
+<script src="/public/app.js"></script><script>
+active("login");
+async function login(){try{let d=await api("/api/login",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({username:q("username").value,password:q("password").value})});q("result").innerHTML=`<div class="card">Login สำเร็จ: ${d.user.display_name} (${d.user.role})</div>`;const next=new URLSearchParams(location.search).get("next")||"/public/today-operation.html";setTimeout(()=>location.href=next,300);}catch(e){alert(e.message)}}
+async function logout(){await api("/api/logout",{method:"POST"});q("result").innerHTML=`<div class="card">Logout แล้ว</div>`}
+async function me(){let d=await api("/api/me");q("result").innerHTML=`<pre>${JSON.stringify(d,null,2)}</pre>`}
+</script></body></html>
