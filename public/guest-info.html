@@ -1,0 +1,10 @@
+<!doctype html><html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Guest Info</title><link rel="stylesheet" href="/public/style.css"></head><body>
+<div class="wrap"><div class="panel"><div class="panel-h">Guest Information</div><div class="panel-b">
+<div class="filters"><label>Name / Room / Agent<input id="qtxt"></label><label>From<input id="from" type="date"></label><label>To<input id="to" type="date"></label><label>Status<select id="status"><option value="">All</option><option>RSV</option><option>CFM</option><option>INH</option><option>CO</option><option>CXL</option></select></label><button class="btn" onclick="load()">Search</button><a class="btn" href="/api/export/guest-list.csv">Export CSV</a></div>
+<div class="table-wrap" style="margin-top:8px"><table><thead><tr><th>ACC#</th><th>RM#</th><th>STAT</th><th>Guest Name</th><th>Arrival</th><th>Departure</th><th>Night</th><th>Agent</th><th>Nationality</th><th>Company</th><th>PAX</th><th>Total</th><th>Paid</th><th>Balance</th></tr></thead><tbody id="rows"></tbody></table></div>
+</div></div></div>
+<script src="/public/app.js"></script><script>
+active("guest"); q("from").value=addDays(today(),-15); q("to").value=addDays(today(),60);
+async function load(){let p=new URLSearchParams(); if(q("qtxt").value)p.set("q",q("qtxt").value); if(q("status").value)p.set("status",q("status").value); if(q("from").value)p.set("from",q("from").value); if(q("to").value)p.set("to",q("to").value);let rows=await api("/api/guest-list?"+p.toString());q("rows").innerHTML=rows.map(r=>`<tr><td>${r.booking_no}</td><td>${r.room_no}</td><td><span class="status ${r.status_code}">${r.status_code}</span></td><td>${r.guest_name}<br><span class="muted">${r.phone}</span></td><td>${r.arrival}</td><td>${r.departure}</td><td>${r.nights}</td><td>${r.agent}</td><td>${r.nationality}</td><td>${r.company}</td><td>${r.pax}</td><td>${money(r.total_amount)}</td><td>${money(r.paid_amount)}</td><td>${money(r.balance)}</td></tr>`).join("")}
+load();
+</script></body></html>
