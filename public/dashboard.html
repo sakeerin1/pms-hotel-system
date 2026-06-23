@@ -1,0 +1,16 @@
+<!doctype html><html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Dashboard</title><link rel="stylesheet" href="/public/style.css"></head><body>
+<div class="wrap"><div class="panel"><div class="panel-h">Dashboard</div><div class="panel-b">
+<div class="grid cards" id="cards"></div>
+<div class="layout2" style="margin-top:8px"><div class="panel"><div class="panel-h">Next 14 Days Forecast</div><div class="panel-b" id="forecast"></div></div><div class="panel"><div class="panel-h">Quick Links</div><div class="panel-b actions"><a class="btn" href="/public/front-desk.html">Front Desk</a><a class="btn" href="/public/front-cashier.html">Cashier</a><a class="btn" href="/public/new-booking.html">New Booking</a></div></div></div>
+<div class="panel" style="margin-top:8px"><div class="panel-h">Recent Bookings</div><div class="panel-b table-wrap"><table><thead><tr><th>Booking</th><th>Room</th><th>Guest</th><th>Arrival</th><th>Departure</th><th>Status</th><th>Total</th></tr></thead><tbody id="recent"></tbody></table></div></div>
+</div></div></div>
+<script src="/public/app.js"></script><script>
+active("dashboard");
+api("/api/dashboard").then(d=>{
+ const cards=[["Total Rooms",d.total_rooms,"จำนวนห้อง"],["Occupied",d.inhouse,"กำลังพัก"],["Vacant",d.vacant,"ห้องว่าง"],["Arrivals",d.arrivals,"เข้าใหม่วันนี้"],["Departures",d.departures,"ออกวันนี้"],["Occ %",d.occupancy+"%","อัตราเข้าพัก"],["Today Cash",money(d.today_payments),"รับเงินวันนี้"],["Month Cash",money(d.month_payments),"รับเงินเดือนนี้"]];
+ q("cards").innerHTML=cards.map(x=>`<div class="card"><h3>${x[0]}</h3><div class="big">${x[1]}</div><div class="muted">${x[2]}</div></div>`).join("");
+ let max=Math.max(...d.next14.map(x=>x.rooms),1);
+ q("forecast").innerHTML=d.next14.map(x=>`<div style="display:grid;grid-template-columns:90px 1fr 60px;gap:8px;margin-bottom:6px"><b>${x.date.slice(5)}</b><div style="background:#e9f5f5;border:1px solid #9bb"><div style="height:16px;width:${x.rooms/max*100}%;background:#168d95"></div></div><span>${x.occupancy}%</span></div>`).join("");
+ q("recent").innerHTML=d.recent.map(b=>`<tr><td>${b.booking_no}</td><td>${b.room_no}</td><td>${b.guest_name}</td><td>${b.checkin}</td><td>${b.checkout}</td><td>${b.status}</td><td>${money(b.total_amount)}</td></tr>`).join("");
+});
+</script></body></html>
