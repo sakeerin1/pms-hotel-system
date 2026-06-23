@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Activity Log</title><link rel="stylesheet" href="/public/style.css"></head>
+<body><div class="wrap"><div class="panel"><div class="panel-h">Activity Log / บันทึกการใช้งานระบบ</div><div class="panel-b">
+  <div class="filters"><input id="kw" placeholder="ค้นหา action / detail"><button class="btn" onclick="load()">Refresh</button></div>
+  <div class="table-wrap" style="margin-top:8px"><table><thead><tr><th>เวลา</th><th>Action</th><th>รายละเอียด</th></tr></thead><tbody id="rows"></tbody></table></div>
+</div></div></div>
+<script src="/public/app.js"></script><script>
+active('activity');
+function esc(v){return String(v??'').replace(/[&<>]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[m]))}
+async function load(){
+  const logs=await api('/api/activity-logs');
+  const k=(q('kw').value||'').toLowerCase();
+  q('rows').innerHTML=(logs||[]).filter(x=>!k||String(x.action+' '+x.detail).toLowerCase().includes(k)).map(x=>`<tr><td>${esc((x.at||'').replace('T',' ').slice(0,19))}</td><td><b>${esc(x.action)}</b></td><td>${esc(x.detail)}</td></tr>`).join('')||'<tr><td colspan="3">ยังไม่มี Activity Log</td></tr>';
+}
+q('kw').addEventListener('input',load);
+load();
+</script></body></html>
