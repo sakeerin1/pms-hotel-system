@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>New Booking / Walk-in</title>
+  <link rel="stylesheet" href="/public/style.css">
+</head>
+<body>
+<div class="wrap">
+  <div class="panel">
+    <div class="panel-h">New Booking / Walk-in Booking</div>
+    <div class="panel-b">
+      <div class="formgrid">
+        <label>Check-in<input id="checkin" type="date"></label>
+        <label>Check-out<input id="checkout" type="date"></label>
+        <label>Room Type<select id="roomType"></select></label>
+        <label>Room<select id="roomNo"></select></label>
+
+        <label>Guests<input id="guests" type="number" value="2"></label>
+        <label>Adults<input id="adults" type="number" value="2"></label>
+        <label>Children<input id="children" type="number" value="0"></label>
+        <label>Status<select id="status"><option value="confirmed">Confirmed</option><option value="pending">Pending</option><option value="checked_in">Check-in Now</option></select></label>
+
+        <label>Guest Name<input id="guest"></label>
+        <label>Phone<input id="phone"></label>
+        <label>Agent<select id="agent"><option>Direct LINE</option><option>Walk In</option><option>Member Guest</option><option>AGODA COLLECT</option><option>Booking.com Room Only</option><option>Expedia Room+CBF</option></select></label>
+        <label>Nationality<input id="nat" value="Thai"></label>
+
+        <label>Company<input id="company"></label>
+        <label>Voucher<input id="voucher"></label>
+        <label>Promotion Code<input id="promo" placeholder="เช่น LINE100"></label>
+        <label>Total Amount<input id="total" type="number"></label>
+        <label>Paid Amount<input id="paid" type="number" value="0"></label>
+
+        <label>Payment Method<select id="method"><option>Transfer</option><option>Cash</option><option>QR</option><option>Credit Card</option></select></label>
+        <label>Shift<select id="shift" data-shift-select></select></label>
+      </div>
+
+      <label style="margin-top:8px">Note<textarea id="note" rows="3"></textarea></label>
+
+      <div class="actions" style="margin-top:8px">
+        <button class="btn" onclick="search()">Check Availability</button>
+        <button class="btn" onclick="save()">Save Booking</button>
+        <a class="btn" href="/public/front-desk.html">Back to Front Desk</a>
+      </div>
+
+      <div id="avail" style="margin-top:8px"></div>
+      <div id="result" style="margin-top:8px"></div>
+    </div>
+  </div>
+</div>
+
+<script src="/public/app.js"></script>
+<script>
+active("booking");
+const params = new URLSearchParams(location.search);
+q("checkin").value = today();
+q("checkout").value = addDays(today(),1);
+if(params.get("agent")) q("agent")?.value;
+let types = [];
+q("shift").innerHTML = shiftOptionsHtml(currentShift());
+
+async function init(){
+  types = await api("/api/room-types");
+  q("roomType").innerHTML = types.map(r=>`<option value="${r.id}">${r.code} - ${r.name}</option>`).join("");
+  try {
+    const channels = await api("/api/channels");
+    q("agent").innerHTML = channels.filter(c=>c.active!==false).map(c=>`<option>${c.name}</option>`).join("");
+  } catch(e) {}
+  if(params.get("agent")) q("agent").value = params.get("agent");
+  if(params.get("status")) q("status").value = params.get("status");
+  await calc();
+  await search();
+}
+async function calc(){
+  let rt = types.find(x=>x.id==q("roomType").value);
+  if(rt) {
+    q("guests").value = rt.max_guests;
+    q("adults").value = rt.max_guests;
+    try{
+      const quote = await api(`/api/quote?room_type_id=${q("roomType").value}&checkin=${q("checkin").value}&checkout=${q("checkout").value}&promo_code=${encodeURIComponent(q("promo")?.value||"")}`);
+      q("total").value = quote.final_total;
+      q("result").innerHTML = quote.discount_amount ? `<div class="note">Promo ${quote.promo_code}: ส่วนลด ${money(quote.discount_amount)} จากยอด ${money(quote.gross_total)}</div>` : "";
+    }catch(e){ q("total").value = rt.base_price; }
+  }
+}
+q("roomType").onchange = async()=>{await calc(); await searchRoomsOnly();}
+q("checkin").onchange = async()=>{await calc(); await searchRoomsOnly();}
+q("checkout").onchange = async()=>{await calc(); await searchRoomsOnly();}
+q("promo").onchange = calc;
+
+async function searchRoomsOnly(){
+  const rt = q("roomType").value;
+  const rows = await api(`/api/available-rooms?checkin=${q("checkin").value}&checkout=${q("checkout").value}&room_type_id=${rt}`);
+  q("roomNo").innerHTML = rows.map(r=>`<option value="${r.room_no}">${r.room_no} (${r.room_type_code})</option>`).join("");
+}
+async function search(){
+  let rows = await api(`/api/availability?checkin=${q("checkin").value}&checkout=${q("checkout").value}`);
+  q("avail").innerHTML = `<div class="table-wrap"><table><thead><tr><th>Room Type</th><th>Price</th><th>Total</th><th>Booked</th><th>Available</th></tr></thead><tbody>${rows.map(r=>`<tr><td>${r.code} - ${r.name}</td><td>${money(r.base_price)}</td><td>${r.total_rooms}</td><td>${r.booked}</td><td><b>${r.available}</b></td></tr>`).join("")}</tbody></table></div>`;
+  await searchRoomsOnly();
+}
+async function save(){
+  const payload = {
+    room_type_id:Number(q("roomType").value),
+    room_no:q("roomNo").value,
+    checkin:q("checkin").value,
+    checkout:q("checkout").value,
+    guests:Number(q("guests").value),
+    adults:Number(q("adults").value),
+    children:Number(q("children").value),
+    guest_name:q("guest").value,
+    phone:q("phone").value,
+    agent:q("agent").value,
+    nationality:q("nat").value,
+    company:q("company").value,
+    voucher_no:q("voucher").value,
+    promo_code:q("promo").value,
+    total_amount:Number(q("total").value),
+    paid_amount:Number(q("paid").value),
+    payment_method:q("method").value,
+    shift_name:q("shift").value,
+    status:q("status").value,
+    note:q("note").value
+  };
+  try{
+    let b = await api("/api/bookings",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});
+    q("result").innerHTML = `<div class="card"><b>Saved:</b> ${b.booking_no}<br>Room: ${b.room_no}<br>Guest: ${b.guest_name}<br><a class="btn" href="/public/front-desk.html">ไปหน้า Front Desk</a></div>`;
+    await search();
+  }catch(e){ alert(e.message); }
+}
+init();
+</script>
+</body>
+</html>
