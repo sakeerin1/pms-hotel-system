@@ -1,0 +1,207 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Room Plan</title>
+  <link rel="stylesheet" href="/public/style.css">
+  <style>
+    .modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.35);display:none;align-items:flex-start;justify-content:center;padding:36px 12px;z-index:20}
+    .modal{background:#d5eeee;border:1px solid var(--line);width:min(760px,100%);max-height:88vh;overflow:auto;box-shadow:0 12px 40px rgba(0,0,0,.35)}
+    .modal-h{background:linear-gradient(#edffff,#b6dddd);border-bottom:1px solid var(--line);padding:9px;font-weight:700;display:flex;justify-content:space-between}
+    .modal-b{padding:10px}
+    .drop-target{outline:2px dashed #007f86}
+    .chip{cursor:grab}
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <div class="panel">
+    <div class="panel-h">Room Plan - Drag Move / Check-in / Check-out / Extend Stay</div>
+    <div class="panel-b">
+      <div class="filters">
+        <label>From Date<input id="from" type="date"></label>
+        <label>Days<select id="days"><option>14</option><option selected>21</option><option>30</option></select></label>
+        <button class="btn" onclick="load()">Refresh</button>
+        <a class="btn" href="/public/new-booking.html">New Booking</a>
+      </div>
+      <div class="card" style="margin-top:8px">
+        <b>Block Sale / Mark room OOO</b>
+        <div class="filters" style="margin-top:6px">
+          <label>Room<select id="blockRoom"></select></label>
+          <label>ปิดตั้งแต่<input id="blockStart" type="date"></label>
+          <label>ปิดถึงวันที่<input id="blockEnd" type="date"></label>
+          <label>Reason<input id="blockReason" placeholder="เช่น ซ่อมแอร์ / น้ำรั่ว / ปิดปรับปรุง"></label>
+          <button class="btn danger" onclick="blockRoomSale()">Block Sale / Mark room OOO</button>
+          <button class="btn" onclick="openRoomSale()">Open Sale / ยกเลิก Manual Block</button>
+        </div>
+        <div id="blockList" class="note" style="margin-top:6px"></div>
+      </div>
+      <div class="note">ลากชื่อแขกไปยังห้อง/วันที่ใหม่ เพื่อย้ายห้องและเลื่อนวันเข้าพัก ระบบจะคงจำนวนคืนเดิมให้ / ห้องที่ถูก Block Sale ตามช่วงเวลา หรือมีใบแจ้งซ่อม จะถูกปิดขายในวันที่กำหนด</div>
+      <div class="roomplan-box" style="margin-top:8px">
+        <table class="roomplan" id="tbl"></table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="modalBg" class="modal-bg">
+  <div class="modal">
+    <div class="modal-h">
+      <span id="modalTitle">Booking</span>
+      <button class="btn" onclick="closeModal()">Close</button>
+    </div>
+    <div class="modal-b" id="modalBody"></div>
+  </div>
+</div>
+
+<script src="/public/app.js"></script>
+<script>
+active("roomplan");
+q("from").value=today();
+q("blockStart").value=today();
+q("blockEnd").value=today();
+let planData=null;
+let dragInfo=null;
+
+function closeModal(){q("modalBg").style.display="none";q("modalBody").innerHTML=""}
+function showModal(title, html){q("modalTitle").textContent=title;q("modalBody").innerHTML=html;q("modalBg").style.display="flex"}
+function diffDays(a,b){return Math.max(1, Math.round((new Date(b)-new Date(a))/86400000))}
+function addDayLocal(d,n){return addDays(d,n)}
+function blockForDay(r,day){
+  return (r.blocks||[]).find(bl => bl.status!=="cancelled" && bl.start_date<=day && addDays(bl.end_date||bl.start_date,1)>day);
+}
+
+async function load(){
+  const d=await api(`/api/roomplan?from=${q("from").value}&days=${q("days").value}`);
+  planData=d;
+  if(q("blockRoom")){
+    const keep=q("blockRoom").value;
+    q("blockRoom").innerHTML=d.rooms.map(r=>`<option value="${r.room_no}" ${r.room_no===keep?'selected':''}>${r.room_no} (${r.room_type_code}) ${r.blocked?' - OOO/Blocked':''}</option>`).join("");
+  }
+  const blockRows=[];
+  d.rooms.forEach(r => (r.blocks||[]).forEach(bl => blockRows.push({room_no:r.room_no,...bl})));
+  q("blockList").innerHTML = blockRows.length ? "Active Block: " + blockRows.slice(0,8).map(b=>`${b.room_no} ${b.start_date} ถึง ${b.end_date} ${b.source==='maintenance'?'[Maintenance]':'[Manual]'}`).join(" | ") : "ไม่มีรายการ Block Sale ในช่วงวันที่ที่เลือก";
+  let h="<thead><tr><th class='room-col'>Go To Room ...</th>"+d.dates.map(x=>`<th class="${x===today()?'today':''}">${x.slice(5)}</th>`).join("")+"</tr></thead><tbody>";
+  d.rooms.forEach(r=>{
+    h+=`<tr><td class="room-col">${r.room_no} (${r.room_type_code})</td>`;
+    d.dates.forEach(day=>{
+      let b=r.bookings.find(x=>x.checkin<=day&&x.checkout>day);
+      const block = blockForDay(r,day);
+      const blocked = !!block;
+      h+=`<td class="${day===today()?'today':''} ${blocked?'blocked-cell':''}" data-room="${r.room_no}" data-date="${day}" data-blocked="${blocked?1:0}" title="${blocked?((block.ticket_no?block.ticket_no+' ': '') + (block.reason||'Blocked')):''}" ondragover="allowDrop(event)" ondragleave="leaveDrop(event)" ondrop="dropBooking(event)">`;
+      if(blocked){
+        h+=`<div class="chip BLOCK">${block.source==='maintenance'?'MT':'OOO'}</div>`;
+      } else if(b){
+        h+=`<div class="chip ${b.code}" draggable="true" onclick="openBooking(${b.id})" ondragstart="startDrag(event,${b.id},'${b.checkin}','${b.checkout}','${r.room_no}')" title="${b.guest_name}">${b.short_name}</div>`;
+      }
+      h+="</td>";
+    });
+    h+="</tr>";
+  });
+  q("tbl").innerHTML=h+"</tbody>";
+}
+function startDrag(ev,id,checkin,checkout,room){
+  dragInfo={id,checkin,checkout,room};
+  ev.dataTransfer.setData("text/plain",String(id));
+}
+function allowDrop(ev){if(ev.currentTarget.dataset.blocked==="1")return; ev.preventDefault(); ev.currentTarget.classList.add("drop-target")}
+function leaveDrop(ev){ev.currentTarget.classList.remove("drop-target")}
+async function dropBooking(ev){
+  ev.preventDefault();
+  ev.currentTarget.classList.remove("drop-target");
+  if(ev.currentTarget.dataset.blocked==="1") return alert("ห้องนี้ถูกปิดขายจาก OOO / Maintenance");
+  if(!dragInfo) return;
+  const room=ev.currentTarget.dataset.room;
+  const date=ev.currentTarget.dataset.date;
+  const stay=diffDays(dragInfo.checkin,dragInfo.checkout);
+  const newCheckout=addDayLocal(date,stay);
+  if(!confirm(`ย้าย Booking ไปห้อง ${room}\\nCheck-in: ${date}\\nCheck-out: ${newCheckout}\\nยืนยันหรือไม่?`)) return;
+  try{
+    await api("/api/bookings/"+dragInfo.id,{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({room_no:room,checkin:date,checkout:newCheckout})});
+    dragInfo=null;
+    await load();
+  }catch(e){alert(e.message)}
+}
+async function openBooking(id){
+  const b=await api("/api/bookings/"+id);
+  showModal("Room Plan Action - "+b.booking_no, `
+    <div class="card">
+      <b>${b.guest_name}</b><br>
+      Room: ${b.room_no}<br>
+      Stay: ${b.checkin} ถึง ${b.checkout}<br>
+      Balance: ${money(b.balance)}<br>
+      Status: ${b.status}
+    </div>
+    <div class="actions" style="margin-top:8px">
+      <button class="btn" onclick="rpStatus(${id},'checked_in')">Check-in</button>
+      <button class="btn" onclick="rpStatus(${id},'checked_out')">Check-out</button>
+      <button class="btn" onclick="openRpMove(${id})">Move Room</button>
+      <button class="btn" onclick="openRpExtend(${id})">พักต่อ</button>
+      <a class="btn" href="/public/booking-detail.html?booking_id=${id}">Booking Detail</a>
+      <a class="btn" href="/public/front-desk.html">Front Desk</a>
+      <a class="btn" href="/public/front-cashier.html?booking_id=${id}">Payment</a>
+    </div>
+  `);
+}
+async function rpStatus(id,status){
+  const payload={status};
+  if(status==="checked_out"){
+    const b=await api("/api/bookings/"+id);
+    if(Number(b.balance)>0){
+      if(!confirm("ยังมียอดค้างชำระ " + money(b.balance) + " ต้องการ Check-out ต่อหรือไม่?")) return;
+      payload.force=true;
+    }
+  }
+  await api(`/api/bookings/${id}/status`,{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});
+  closeModal(); await load();
+}
+async function openRpMove(id){
+  const b=await api("/api/bookings/"+id);
+  const rooms=await api(`/api/available-rooms?checkin=${b.checkin}&checkout=${b.checkout}&room_type_id=${b.room_type_id}&exclude_id=${id}`);
+  showModal("Move Room - "+b.booking_no, `
+    <label>เลือกห้องใหม่<select id="rp_room">${rooms.map(r=>`<option value="${r.room_no}">${r.room_no} (${r.room_type_code})</option>`).join("")}</select></label>
+    <div class="actions" style="margin-top:8px"><button class="btn" onclick="saveRpMove(${id})">Save Move</button></div>
+  `);
+}
+async function saveRpMove(id){
+  await api("/api/bookings/"+id,{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({room_no:q("rp_room").value})});
+  closeModal(); await load();
+}
+async function openRpExtend(id){
+  const b=await api("/api/bookings/"+id);
+  showModal("Extend Stay - "+b.booking_no, `
+    <label>Departure ใหม่<input id="rp_checkout" type="date" value="${addDays(b.checkout,1)}"></label>
+    <label>ยอดใหม่<input id="rp_total" type="number" value="${b.total_amount}"></label>
+    <div class="actions" style="margin-top:8px"><button class="btn" onclick="saveRpExtend(${id})">Save Extend</button></div>
+  `);
+}
+async function saveRpExtend(id){
+  await api("/api/bookings/"+id,{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({checkout:q("rp_checkout").value,total_amount:Number(q("rp_total").value)})});
+  closeModal(); await load();
+}
+async function blockRoomSale(){
+  const room=q("blockRoom").value;
+  const reason=q("blockReason").value || "Block Sale / Mark room OOO";
+  if(!room) return alert("เลือกห้องก่อน");
+  if(!confirm(`ต้องการ Block Sale / Mark room OOO ห้อง ${room} หรือไม่?\nReason: ${reason}`)) return;
+  try{
+    await api("/api/rooms/block-sale",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({room_no:room,reason,action:"block",mark_ooo:true})});
+    q("blockReason").value="";
+    await load();
+  }catch(e){alert(e.message)}
+}
+async function openRoomSale(){
+  const room=q("blockRoom").value;
+  if(!room) return alert("เลือกห้องก่อน");
+  if(!confirm(`ต้องการยกเลิก Manual Block Sale ของห้อง ${room} หรือไม่?
+หมายเหตุ: ถ้าเป็น Block จาก Maintenance ต้องปิดใบงานซ่อมก่อน`)) return;
+  try{
+    await api("/api/rooms/block-sale",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({room_no:room,action:"open",housekeeping_status:"VD"})});
+    await load();
+  }catch(e){alert(e.message==="maintenance_ticket_still_open"?"ห้องนี้ยังมีใบแจ้งซ่อมค้างอยู่ ต้องปิดงานซ่อมก่อนเปิดขาย":e.message)}
+}
+load();
+</script>
+</body>
+</html>
