@@ -1,0 +1,15 @@
+<!doctype html><html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Night Audit</title><link rel="stylesheet" href="/public/style.css"></head><body>
+<div class="wrap"><div class="panel"><div class="panel-h">Night Audit / Close Day</div><div class="panel-b">
+<div class="filters"><label>วันที่<input id="auditDate" type="date"></label><label>ผู้ปิดรอบ<input id="closedBy" placeholder="ชื่อพนักงาน"></label><button class="btn" onclick="load()">Load</button><button class="btn" onclick="closeDay(false)">Close Day</button><button class="btn" onclick="closeDay(true)">Force Close</button></div>
+<div id="cards" class="cards grid" style="margin-top:8px"></div><div id="warning" class="note"></div>
+<div class="panel" style="margin-top:8px"><div class="panel-h">Outstanding Balance</div><div class="panel-b table-wrap"><table><thead><tr><th>Booking</th><th>Room</th><th>Guest</th><th>Stay</th><th>Balance</th><th>Action</th></tr></thead><tbody id="outstanding"></tbody></table></div></div>
+</div></div></div>
+<script src="/public/app.js"></script><script>
+active("nightaudit");q("auditDate").value=today();
+async function load(){const d=await api("/api/night-audit?date="+q("auditDate").value);const r=d.daily;const o=d.operation;q("cards").innerHTML=`
+<div class="card"><h3>Status</h3><div class="big">${d.closed?"Closed":"Open"}</div></div><div class="card"><h3>Occ %</h3><div class="big">${r.occupancy}%</div></div><div class="card"><h3>Room Revenue</h3><div class="big">${money(r.room_revenue)}</div></div><div class="card"><h3>Payment</h3><div class="big">${money(r.payment_total)}</div></div><div class="card"><h3>Refund</h3><div class="big">${money(r.refund_total)}</div></div><div class="card"><h3>Net</h3><div class="big">${money(r.net_payment)}</div></div><div class="card"><h3>Arrivals</h3><div class="big">${o.arrivals}</div></div><div class="card"><h3>Departures</h3><div class="big">${o.departures}</div></div>`;
+q("warning").textContent=d.closed?`ปิดรอบแล้วโดย ${d.audit.closed_by||""} เวลา ${(d.audit.closed_at||"").slice(0,16).replace("T"," ")}`:(d.outstanding.length?`มีรายการค้างชำระ ${d.outstanding.length} รายการ หากจะปิดรอบต้องเคลียร์หรือ Force Close`:'พร้อมปิดรอบ');
+q("outstanding").innerHTML=d.outstanding.map(b=>`<tr><td>${b.booking_no}</td><td>${b.room_no}</td><td>${b.guest_name}</td><td>${b.checkin} → ${b.checkout}</td><td><b>${money(b.balance)}</b></td><td><a class="btn" href="/public/front-cashier.html?booking_id=${b.id}">Payment</a></td></tr>`).join("");}
+async function closeDay(force){if(!confirm(force?"Force Close แม้มียอดค้าง?":"ยืนยันปิดรอบวันนี้?"))return;try{await api("/api/night-audit/close",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({date:q("auditDate").value,closed_by:q("closedBy").value,force})});alert("ปิดรอบสำเร็จ");load();}catch(e){alert(e.message)}}
+load();
+</script></body></html>
