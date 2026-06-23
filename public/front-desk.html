@@ -1,0 +1,356 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Front Desk / Reception</title>
+  <link rel="stylesheet" href="/public/style.css">
+  <style>
+    .tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px}
+    .tab{border:1px solid var(--line);background:linear-gradient(#fff,#cdeeee);padding:8px 14px;cursor:pointer;font-weight:700}
+    .tab.active{background:linear-gradient(#7cd0d2,#42aeb5)}
+    .modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.35);display:none;align-items:flex-start;justify-content:center;padding:40px 12px;z-index:20}
+    .modal{background:#d5eeee;border:1px solid var(--line);width:min(980px,100%);max-height:88vh;overflow:auto;box-shadow:0 12px 40px rgba(0,0,0,.35)}
+    .modal.show{display:block}
+    .modal-h{background:linear-gradient(#edffff,#b6dddd);border-bottom:1px solid var(--line);padding:9px;font-weight:700;display:flex;justify-content:space-between}
+    .modal-b{padding:10px}
+    .print-area{display:none}
+    @media print{
+      body>*:not(.print-area){display:none!important}
+      .print-area{display:block!important;font-family:Tahoma,Arial,sans-serif;color:#000}
+      .print-box{border:1px solid #000;padding:18px;margin:12px}
+      .print-title{text-align:center;font-size:22px;font-weight:700;margin-bottom:14px}
+      table.print-table{width:100%;border-collapse:collapse}
+      table.print-table td{border:1px solid #000;padding:8px;white-space:normal}
+    }
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <div class="panel">
+    <div class="panel-h">Front Desk / Reception</div>
+    <div class="panel-b">
+      <div class="tabs">
+        <button class="tab active" onclick="setQuick('all',this)">All</button>
+        <button class="tab" onclick="setQuick('arrival',this)">Arrivals Today</button>
+        <button class="tab" onclick="setQuick('inhouse',this)">In-house</button>
+        <button class="tab" onclick="setQuick('departure',this)">Departures Today</button>
+        <button class="tab" onclick="setQuick('balance',this)">มีค้างชำระ</button>
+      </div>
+
+      <div class="filters">
+        <label>ค้นหา ชื่อ / เบอร์ / เลขจอง / ห้อง
+          <input id="qtxt" placeholder="เช่น สมชาย / 081 / BK2026 / 301">
+        </label>
+        <label>From
+          <input id="from" type="date">
+        </label>
+        <label>To
+          <input id="to" type="date">
+        </label>
+        <label>Status
+          <select id="status">
+            <option value="">All</option>
+            <option>RSV</option>
+            <option>CFM</option>
+            <option>INH</option>
+            <option>CO</option>
+            <option>CXL</option>
+          </select>
+        </label>
+        <button class="btn" onclick="load()">Search</button>
+        <a class="btn" href="/public/new-booking.html">New Booking</a>
+      </div>
+
+      <div class="actions" style="margin:8px 0">
+        <button class="btn" onclick="openWalkin()">Walk-in Booking</button>
+        <button class="btn" onclick="load()">Refresh</button>
+        <a class="btn" href="/api/export/guest-list.csv">Export CSV</a>
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>ACC#</th>
+              <th>RM#</th>
+              <th>STAT</th>
+              <th>Guest Name</th>
+              <th>Arrival</th>
+              <th>Departure</th>
+              <th>Night</th>
+              <th>Agent</th>
+              <th>Total</th>
+              <th>Paid</th>
+              <th>Balance</th>
+              <th>Front Action</th>
+              <th>Print</th>
+            </tr>
+          </thead>
+          <tbody id="rows"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="modalBg" class="modal-bg">
+  <div class="modal">
+    <div class="modal-h">
+      <span id="modalTitle">Booking</span>
+      <button class="btn" onclick="closeModal()">Close</button>
+    </div>
+    <div class="modal-b" id="modalBody"></div>
+  </div>
+</div>
+
+<div class="print-area" id="printArea"></div>
+
+<script src="/public/app.js"></script>
+<script>
+active("frontdesk");
+
+let allRows = [];
+let quickMode = "all";
+let roomTypes = [];
+let rooms = [];
+
+q("from").value = addDays(today(), -15);
+q("to").value = addDays(today(), 60);
+
+function statBadge(s){return `<span class="status ${s}">${s}</span>`}
+function closeModal(){q("modalBg").style.display="none"; q("modalBody").innerHTML=""}
+function showModal(title, html){q("modalTitle").textContent=title; q("modalBody").innerHTML=html; q("modalBg").style.display="flex"}
+function setQuick(mode, btn){
+  quickMode = mode;
+  document.querySelectorAll(".tab").forEach(x=>x.classList.remove("active"));
+  btn.classList.add("active");
+  renderRows();
+}
+function filterQuick(rows){
+  if(quickMode==="arrival") return rows.filter(r=>r.arrival===today() && r.status_code!=="CXL");
+  if(quickMode==="inhouse") return rows.filter(r=>r.status_code==="INH");
+  if(quickMode==="departure") return rows.filter(r=>r.departure===today() && r.status_code!=="CXL");
+  if(quickMode==="balance") return rows.filter(r=>Number(r.balance)>0 && r.status_code!=="CXL");
+  return rows;
+}
+async function init(){
+  roomTypes = await api("/api/room-types");
+  rooms = await api("/api/rooms");
+  await load();
+}
+async function load(){
+  let p=new URLSearchParams();
+  if(q("qtxt").value)p.set("q",q("qtxt").value);
+  if(q("status").value)p.set("status",q("status").value);
+  if(q("from").value)p.set("from",q("from").value);
+  if(q("to").value)p.set("to",q("to").value);
+  allRows = await api("/api/guest-list?"+p.toString());
+  renderRows();
+}
+function renderRows(){
+  let rows = filterQuick(allRows);
+  q("rows").innerHTML = rows.map(r=>`
+    <tr>
+      <td><b>${r.booking_no}</b></td>
+      <td>${r.room_no}</td>
+      <td>${statBadge(r.status_code)}</td>
+      <td>${r.guest_name}<br><span class="muted">${r.phone}</span></td>
+      <td>${r.arrival}</td>
+      <td>${r.departure}</td>
+      <td>${r.nights}</td>
+      <td>${r.agent}</td>
+      <td>${money(r.total_amount)}</td>
+      <td>${money(r.paid_amount)}</td>
+      <td><b>${money(r.balance)}</b></td>
+      <td>
+        <div class="actions">
+          <button class="btn" onclick="doCheckin(${r.id})">Check-in</button>
+          <button class="btn" onclick="doCheckout(${r.id})">Check-out</button>
+          <a class="btn" href="/public/booking-detail.html?booking_id=${r.id}">Detail</a>
+          <button class="btn" onclick="openAmend(${r.id})">Amend</button>
+          <button class="btn" onclick="openMove(${r.id})">Move Room</button>
+          <button class="btn" onclick="openExtend(${r.id})">Extend</button>
+          <button class="btn" onclick="openEarlyLate(${r.id})">Early/Late</button>
+          <button class="btn" onclick="doCancel(${r.id})">Cancel</button>
+          <a class="btn" href="/public/front-cashier.html?booking_id=${r.id}">Payment</a>
+        </div>
+      </td>
+      <td>
+        <div class="actions">
+          <button class="btn" onclick="printBooking(${r.id})">ใบจอง</button>
+          <button class="btn" onclick="printReg(${r.id})">ใบลงทะเบียน</button>
+        </div>
+      </td>
+    </tr>
+  `).join("");
+}
+async function getBooking(id){return await api("/api/bookings/"+id)}
+async function doCheckin(id){
+  if(!confirm("ยืนยัน Check-in รายการนี้?")) return;
+  await patchStatus(id,"checked_in");
+}
+async function doCheckout(id){
+  const b = await getBooking(id);
+  const force = Number(b.balance)>0;
+  if(force && !confirm("รายการนี้ยังค้างชำระ " + money(b.balance) + " ต้องการ Check-out ต่อหรือไม่?")) return;
+  await patchStatus(id,"checked_out",force);
+}
+async function doCancel(id){
+  if(!confirm("ยืนยันยกเลิก Booking นี้?")) return;
+  await patchStatus(id,"cancelled");
+}
+function roomTypeOptions(selected){
+  return roomTypes.map(t=>`<option value="${t.id}" ${Number(selected)===t.id?"selected":""}>${t.code} - ${t.name}</option>`).join("");
+}
+function roomOptions(selected){
+  return rooms.map(r=>`<option value="${r.room_no}" ${String(selected)===String(r.room_no)?"selected":""}>${r.room_no}</option>`).join("");
+}
+async function openAmend(id){
+  const b = await getBooking(id);
+  showModal("Amend Booking - " + b.booking_no, `
+    <div class="formgrid">
+      <label>Guest Name<input id="m_guest" value="${b.guest_name||""}"></label>
+      <label>Phone<input id="m_phone" value="${b.phone||""}"></label>
+      <label>Check-in<input id="m_checkin" type="date" value="${b.checkin}"></label>
+      <label>Check-out<input id="m_checkout" type="date" value="${b.checkout}"></label>
+      <label>Room Type<select id="m_roomtype">${roomTypeOptions(b.room_type_id)}</select></label>
+      <label>Room<select id="m_room">${roomOptions(b.room_no)}</select></label>
+      <label>Guests<input id="m_guests" type="number" value="${b.guests||1}"></label>
+      <label>Total<input id="m_total" type="number" value="${b.total_amount||0}"></label>
+      <label>Agent<input id="m_agent" value="${b.agent||""}"></label>
+      <label>Nationality<input id="m_nat" value="${b.nationality||""}"></label>
+      <label>Company<input id="m_company" value="${b.company||""}"></label>
+      <label>Voucher<input id="m_voucher" value="${b.voucher_no||""}"></label>
+    </div>
+    <label style="margin-top:8px">Note<textarea id="m_note" rows="3">${b.note||""}</textarea></label>
+    <div class="actions" style="margin-top:10px">
+      <button class="btn" onclick="saveAmend(${id})">Save Amend</button>
+    </div>
+  `);
+}
+async function saveAmend(id){
+  const payload = {
+    guest_name:q("m_guest").value,
+    phone:q("m_phone").value,
+    checkin:q("m_checkin").value,
+    checkout:q("m_checkout").value,
+    room_type_id:Number(q("m_roomtype").value),
+    room_no:q("m_room").value,
+    guests:Number(q("m_guests").value),
+    total_amount:Number(q("m_total").value),
+    agent:q("m_agent").value,
+    nationality:q("m_nat").value,
+    company:q("m_company").value,
+    voucher_no:q("m_voucher").value,
+    note:q("m_note").value
+  };
+  await api("/api/bookings/"+id,{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});
+  closeModal(); await load();
+}
+async function openMove(id){
+  const b = await getBooking(id);
+  const available = await api(`/api/available-rooms?checkin=${b.checkin}&checkout=${b.checkout}&room_type_id=${b.room_type_id}&exclude_id=${id}`);
+  showModal("Move Room - " + b.booking_no, `
+    <div class="card">
+      ลูกค้า: <b>${b.guest_name}</b><br>
+      ห้องเดิม: <b>${b.room_no}</b><br>
+      วันที่พัก: ${b.checkin} ถึง ${b.checkout}
+    </div>
+    <label style="margin-top:8px">เลือกห้องใหม่
+      <select id="move_room">
+        ${available.map(r=>`<option value="${r.room_no}">${r.room_no} (${r.room_type_code}) ${r.room_type}</option>`).join("")}
+      </select>
+    </label>
+    <div class="actions" style="margin-top:10px">
+      <button class="btn" onclick="saveMove(${id})">Confirm Move Room</button>
+    </div>
+  `);
+}
+async function saveMove(id){
+  await api("/api/bookings/"+id,{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({room_no:q("move_room").value})});
+  closeModal(); await load();
+}
+async function openExtend(id){
+  const b = await getBooking(id);
+  showModal("Extend Stay - " + b.booking_no, `
+    <div class="card">
+      ลูกค้า: <b>${b.guest_name}</b><br>
+      ห้อง: <b>${b.room_no}</b><br>
+      Departure เดิม: <b>${b.checkout}</b>
+    </div>
+    <label style="margin-top:8px">Departure ใหม่
+      <input id="extend_checkout" type="date" value="${addDays(b.checkout,1)}">
+    </label>
+    <label>ยอดใหม่ (ใส่เองได้)
+      <input id="extend_total" type="number" value="${b.total_amount}">
+    </label>
+    <div class="actions" style="margin-top:10px">
+      <button class="btn" onclick="saveExtend(${id})">Confirm Extend Stay</button>
+    </div>
+  `);
+}
+async function saveExtend(id){
+  await api("/api/bookings/"+id,{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({checkout:q("extend_checkout").value,total_amount:Number(q("extend_total").value)})});
+  closeModal(); await load();
+}
+async function openEarlyLate(id){
+  const b = await getBooking(id);
+  showModal("Early Check-in / Late Check-out - " + b.booking_no, `
+    <div class="formgrid">
+      <label>Early Check-in Time<input id="early_time" type="time" value="${b.early_checkin_time||""}"></label>
+      <label>Late Check-out Time<input id="late_time" type="time" value="${b.late_checkout_time||""}"></label>
+      <label>Extra Charge<input id="extra_charge" type="number" value="0"></label>
+      <label>New Total<input id="early_total" type="number" value="${b.total_amount||0}"></label>
+    </div>
+    <label style="margin-top:8px">Remark<textarea id="early_note" rows="3">${b.note||""}</textarea></label>
+    <div class="actions" style="margin-top:10px">
+      <button class="btn" onclick="saveEarlyLate(${id})">Save Early/Late</button>
+    </div>
+  `);
+  q("extra_charge").oninput = ()=> q("early_total").value = Number(b.total_amount||0)+Number(q("extra_charge").value||0);
+}
+async function saveEarlyLate(id){
+  await api("/api/bookings/"+id,{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({early_checkin_time:q("early_time").value,late_checkout_time:q("late_time").value,total_amount:Number(q("early_total").value),note:q("early_note").value})});
+  closeModal(); await load();
+}
+function openWalkin(){
+  location.href="/public/new-booking.html?agent=Walk%20In&status=checked_in";
+}
+async function printBooking(id){
+  const b = await getBooking(id);
+  q("printArea").innerHTML = `
+    <div class="print-box">
+      <div class="print-title">ใบจองห้องพัก / Booking Confirmation</div>
+      <table class="print-table">
+        <tr><td>Booking No.</td><td>${b.booking_no}</td><td>Room</td><td>${b.room_no}</td></tr>
+        <tr><td>Guest Name</td><td>${b.guest_name}</td><td>Phone</td><td>${b.phone}</td></tr>
+        <tr><td>Check-in</td><td>${b.checkin}</td><td>Check-out</td><td>${b.checkout}</td></tr>
+        <tr><td>Total</td><td>${money(b.total_amount)}</td><td>Paid / Balance</td><td>${money(b.paid_amount)} / ${money(b.balance)}</td></tr>
+        <tr><td>Agent</td><td>${b.agent||""}</td><td>Status</td><td>${b.status}</td></tr>
+        <tr><td>Note</td><td colspan="3">${b.note||""}</td></tr>
+      </table>
+    </div>`;
+  window.print();
+}
+async function printReg(id){
+  const b = await getBooking(id);
+  q("printArea").innerHTML = `
+    <div class="print-box">
+      <div class="print-title">ใบลงทะเบียนเข้าพัก / Guest Registration Card</div>
+      <table class="print-table">
+        <tr><td>Booking No.</td><td>${b.booking_no}</td><td>Room</td><td>${b.room_no}</td></tr>
+        <tr><td>Guest Name</td><td>${b.guest_name}</td><td>Phone</td><td>${b.phone}</td></tr>
+        <tr><td>Nationality</td><td>${b.nationality||""}</td><td>Company</td><td>${b.company||""}</td></tr>
+        <tr><td>Arrival</td><td>${b.checkin}</td><td>Departure</td><td>${b.checkout}</td></tr>
+        <tr><td>PAX</td><td>${b.guests||""}</td><td>Payment Balance</td><td>${money(b.balance)}</td></tr>
+        <tr><td colspan="4" style="height:90px">Guest Signature:</td></tr>
+        <tr><td colspan="4" style="height:70px">Front Desk Signature:</td></tr>
+      </table>
+    </div>`;
+  window.print();
+}
+init();
+</script>
+</body>
+</html>
