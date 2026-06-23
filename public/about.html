@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>About PMS</title><link rel="stylesheet" href="/public/style.css"></head>
+<body><div class="wrap"><div class="panel"><div class="panel-h">About PMS</div><div class="panel-b">
+  <div class="card" style="text-align:center;max-width:680px;margin:20px auto">
+    <div id="logo" style="margin-bottom:10px"></div>
+    <h1 id="product">Kiralux property Hotel PMS V13</h1>
+    <h2 id="hotel"></h2>
+    <p class="muted">Local Hotel PMS สำหรับโรงแรมขนาดเล็ก ใช้งานในเครื่อง</p>
+    <hr>
+    <p><b>by</b> <span id="by">sakeerin</span></p>
+    <p><b>Contact</b> <span id="phone">0881822421</span></p>
+    <p class="note">ระบบนี้รองรับ Front Desk, Room Plan, Cashier, Shift Report, Night Audit, Housekeeping, Maintenance, CRM, Backup/Restore และเอกสารโรงแรม</p>
+  </div>
+</div></div></div>
+<script src="/public/app.js"></script><script>
+active('about');
+api('/api/settings').then(s=>{
+  q('product').textContent=s.product_name||'Kiralux property Hotel PMS V13';
+  q('hotel').textContent=s.hotel_name||'';
+  q('by').textContent=s.product_by||'sakeerin';
+  q('phone').textContent=s.product_phone||'0881822421';
+  if(s.hotel_logo_dataurl) q('logo').innerHTML=`<img src="${s.hotel_logo_dataurl}" style="max-height:100px;max-width:260px;object-fit:contain">`;
+});
+</script></body></html>
