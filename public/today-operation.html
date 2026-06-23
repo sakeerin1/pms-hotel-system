@@ -1,0 +1,76 @@
+﻿<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Today Operation</title>
+  <link rel="stylesheet" href="/public/style.css">
+</head>
+<body>
+<div class="wrap">
+  <div class="panel">
+    <div class="panel-h">Today Operation / หน้างานวันนี้</div>
+    <div class="panel-b">
+      <div class="filters">
+        <label>วันที่<input id="opDate" type="date"></label>
+        <button class="btn" onclick="load()">Refresh</button>
+        <a class="btn" href="/public/new-booking.html">New Booking</a>
+        <a class="btn" href="/public/front-cashier.html">Front Cashier</a>
+        <a class="btn" href="/public/housekeeping.html">Housekeeping</a>
+        <a class="btn" href="/public/night-audit.html">Night Audit</a>
+        <button class="btn" onclick="repairRooms()">Repair Rooms</button>
+      </div>
+      <div id="cards" class="cards grid" style="margin-top:8px"></div>
+    </div>
+  </div>
+
+  <div class="layout3">
+    <div class="panel"><div class="panel-h">Arrival วันนี้</div><div class="panel-b table-wrap"><table><thead><tr><th>Booking</th><th>Room</th><th>Guest</th><th>Balance</th><th>Action</th></tr></thead><tbody id="arrivals"></tbody></table></div></div>
+    <div class="panel"><div class="panel-h">Departure วันนี้</div><div class="panel-b table-wrap"><table><thead><tr><th>Booking</th><th>Room</th><th>Guest</th><th>Balance</th><th>Action</th></tr></thead><tbody id="departures"></tbody></table></div></div>
+  </div>
+
+  <div class="layout3">
+    <div class="panel"><div class="panel-h">In-house</div><div class="panel-b table-wrap"><table><thead><tr><th>Room</th><th>Guest</th><th>Stay</th><th>Balance</th></tr></thead><tbody id="inhouse"></tbody></table></div></div>
+    <div class="panel"><div class="panel-h">ห้องที่ต้องตามงาน</div><div class="panel-b"><div class="layout3"><div><h3>Dirty / VD</h3><div id="dirty" class="floor-grid"></div></div><div><h3>OOO / OOS</h3><div id="ooo" class="floor-grid"></div></div></div></div></div>
+  </div>
+</div>
+<script src="/public/app.js"></script>
+<script>
+active("todayop");
+q("opDate").value=today();
+function bookingRows(rows, type){
+  return rows.map(b=>`<tr><td><b>${esc(b.booking_no)}</b></td><td>${esc(b.room_no)}</td><td>${esc(b.guest_name)}<br><span class="muted">${esc(b.phone||"")}</span></td><td><b>${money(b.balance)}</b></td><td><a class="btn" href="/public/booking-detail.html?booking_id=${encodeURIComponent(b.id)}">Detail</a> <a class="btn" href="/public/front-cashier.html?booking_id=${encodeURIComponent(b.id)}">Payment</a></td></tr>`).join("") || '<tr><td colspan="5" class="muted">No records</td></tr>';
+}
+function inhouseRows(rows){return rows.map(b=>`<tr><td>${esc(b.room_no)}</td><td>${esc(b.guest_name)}</td><td>${esc(b.checkin)} - ${esc(b.checkout)}</td><td><b>${money(b.balance)}</b></td></tr>`).join("") || '<tr><td colspan="4" class="muted">No in-house guests</td></tr>'}
+function roomCards(rows){return rows.map(r=>`<div class="floor-room ${attr(r.housekeeping_status)}"><div class="room-no">${esc(r.room_no)}</div><div class="room-meta">${esc(r.housekeeping_status)}<br>${esc(r.room_status)}</div></div>`).join("") || '<div class="note">No rooms need follow-up</div>'}
+async function repairRooms(){
+  const r=await api("/api/system/repair-room-status?date="+encodeURIComponent(q("opDate").value),{method:"POST"});
+  alert("Repair complete: "+r.changed+" room(s) updated");
+  load();
+}
+async function load(){
+  const d=await api("/api/today-operation?date="+q("opDate").value);
+  const s=d.summary;
+  const occ=s.total_rooms?((s.inhouse/s.total_rooms)*100).toFixed(1):"0.0";
+  q("cards").innerHTML=`
+    <div class="card"><h3>Total Rooms</h3><div class="big">${s.total_rooms}</div></div>
+    <div class="card"><h3>In-house</h3><div class="big">${s.inhouse}</div></div>
+    <div class="card"><h3>Occupancy</h3><div class="big">${occ}%</div></div>
+    <div class="card"><h3>Vacant</h3><div class="big">${s.vacant}</div></div>
+    <div class="card"><h3>Arrivals</h3><div class="big">${s.arrivals}</div></div>
+    <div class="card"><h3>Departures</h3><div class="big">${s.departures}</div></div>
+    <div class="card"><h3>Net Payment</h3><div class="big">${money(s.net_payment)}</div></div>
+    <div class="card"><h3>Dirty</h3><div class="big">${s.dirty}</div></div>
+    <div class="card"><h3>OOO/OOS</h3><div class="big">${s.ooo}</div></div>
+    <div class="card"><h3>Open Balance</h3><div class="big">${s.open_balance}</div></div>`;
+  q("arrivals").innerHTML=bookingRows(d.arrivals,"arrival");
+  q("departures").innerHTML=bookingRows(d.departures,"departure");
+  q("inhouse").innerHTML=inhouseRows(d.inhouse);
+  q("dirty").innerHTML=roomCards(d.dirty_rooms);
+  q("ooo").innerHTML=roomCards(d.ooo_rooms);
+}
+load();
+</script>
+</body>
+</html>
+
