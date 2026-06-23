@@ -1,0 +1,13 @@
+<!doctype html><html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Channels</title><link rel="stylesheet" href="/public/style.css"></head><body>
+<div class="wrap"><div class="panel"><div class="panel-h">Channel / OTA Manual Mapping</div><div class="panel-b">
+<div class="formgrid"><label>Name<input id="name"></label><label>Type<select id="type"><option value="direct">direct</option><option value="ota">ota</option><option value="corporate">corporate</option><option value="monthly">monthly</option></select></label><label>Commission %<input id="commission" type="number" value="0"></label></div>
+<div class="actions" style="margin-top:8px"><button class="btn" onclick="add()">Add Channel</button></div>
+<div class="table-wrap" style="margin-top:8px"><table><thead><tr><th>Name</th><th>Type</th><th>Commission</th><th>Active</th><th>Save</th></tr></thead><tbody id="rows"></tbody></table></div>
+</div></div></div>
+<script src="/public/app.js"></script><script>
+active("channels");
+async function load(){let rows=await api("/api/channels");q("rows").innerHTML=rows.map(c=>`<tr><td><input id="name_${c.id}" value="${c.name}"></td><td><select id="type_${c.id}"><option ${c.type==="direct"?"selected":""}>direct</option><option ${c.type==="ota"?"selected":""}>ota</option><option ${c.type==="corporate"?"selected":""}>corporate</option><option ${c.type==="monthly"?"selected":""}>monthly</option></select></td><td><input id="comm_${c.id}" type="number" value="${c.commission_percent||0}"></td><td><select id="act_${c.id}"><option value="true" ${c.active?"selected":""}>Yes</option><option value="false" ${!c.active?"selected":""}>No</option></select></td><td><button class="btn" onclick="save(${c.id})">Save</button></td></tr>`).join("")}
+async function add(){await api("/api/channels",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({name:q("name").value,type:q("type").value,commission_percent:Number(q("commission").value),active:true})});q("name").value="";load()}
+async function save(id){await api("/api/channels/"+id,{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({name:q("name_"+id).value,type:q("type_"+id).value,commission_percent:Number(q("comm_"+id).value),active:q("act_"+id).value==="true"})});load()}
+load();
+</script></body></html>
