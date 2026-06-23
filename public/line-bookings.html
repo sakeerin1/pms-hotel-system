@@ -1,0 +1,8 @@
+<!doctype html><html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>LINE Booking Approval</title><link rel="stylesheet" href="/public/style.css"></head><body>
+<div class="wrap"><div class="panel"><div class="panel-h">LINE Booking Approval / อนุมัติจองตรง</div><div class="panel-b"><div class="actions"><button class="btn" onclick="load()">Refresh</button><a class="btn" href="/public/public-booking.html" target="_blank">เปิดหน้าลูกค้า</a></div><div class="table-wrap" style="margin-top:8px"><table><thead><tr><th>Booking</th><th>Room</th><th>Guest</th><th>Stay</th><th>Total</th><th>Note</th><th>Action</th></tr></thead><tbody id="rows"></tbody></table></div></div></div></div>
+<script src="/public/app.js"></script><script>
+active("linebookings");
+async function load(){let rows=await api("/api/guest-list?status=RSV");rows=rows.filter(r=>String(r.agent||"").includes("Direct LINE"));q("rows").innerHTML=rows.map(r=>`<tr><td><b>${r.booking_no}</b></td><td>${r.room_no}</td><td>${r.guest_name}<br><span class="muted">${r.phone}</span></td><td>${r.arrival} → ${r.departure}</td><td>${money(r.total_amount)}</td><td>${r.note||""}</td><td><button class="btn" onclick="setStatus(${r.id},'confirmed')">Confirm</button> <button class="btn" onclick="setStatus(${r.id},'cancelled')">Cancel</button> <a class="btn" href="/public/booking-detail.html?booking_id=${r.id}">Detail</a></td></tr>`).join("");}
+async function setStatus(id,status){if(!confirm(status==="confirmed"?"ยืนยันรับจองนี้?":"ยกเลิกรายการนี้?"))return;await api(`/api/bookings/${id}/status`,{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({status})});load();}
+load();
+</script></body></html>
