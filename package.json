@@ -1,0 +1,13 @@
+{
+  "name": "hotel-local-pms-v15",
+  "private": true,
+  "version": "15.0.0",
+  "description": "Hotel Local PMS prepared for local Node runtime and Vercel serverless entry.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": "20.x"
+  }
+}
