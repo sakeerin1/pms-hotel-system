@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Management Reports</title>
+  <link rel="stylesheet" href="/public/style.css">
+  <style>
+    .print-header{display:none}
+    .print-note{font-size:12px;color:#355;margin-top:4px}
+    .report-title{font-size:20px;font-weight:800;margin:8px 0 4px}
+    .report-sub{font-size:13px;color:#345;margin-bottom:8px}
+    .metric-card{break-inside:avoid}
+    @media print{
+      @page{size:A4;margin:12mm}
+      .legacy-shell,.filters,.actions,.no-print{display:none!important}
+      html,body{background:#fff!important;color:#000!important;font-family:Arial,Helvetica,sans-serif;font-size:12px}
+      .wrap{max-width:none;margin:0;padding:0}
+      .panel{border:0!important;background:#fff!important;box-shadow:none!important}
+      .panel-h{background:#fff!important;border:0!important;border-bottom:2px solid #000!important;color:#000!important;font-size:18px;padding:6px 0!important}
+      .panel-b{padding:6px 0!important}
+      .card{border:1px solid #000!important;background:#fff!important;margin-bottom:6px!important;padding:9px!important}
+      .card h3{font-size:12px;margin:0 0 4px;color:#000!important}
+      .big{font-size:22px!important;color:#000!important}
+      .muted{color:#333!important}
+      .cards.grid{grid-template-columns:repeat(2,1fr)!important;gap:8px!important}
+      .layout3{display:block!important}
+      .layout3>.panel{margin:10px 0!important}
+      table{width:100%;border-collapse:collapse!important;background:#fff!important}
+      th,td{border:1px solid #000!important;padding:5px!important;color:#000!important;background:#fff!important}
+      .print-header{display:block!important;text-align:center;margin-bottom:8px;border-bottom:2px solid #000;padding-bottom:8px}
+      .print-header img{max-height:58px;max-width:180px;object-fit:contain;margin-bottom:4px}
+      .print-company{font-size:18px;font-weight:800}
+      .print-meta{font-size:11px}
+      a{color:#000;text-decoration:none}
+    }
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <div class="panel">
+    <div class="panel-h">Management Reports / รายงานผู้บริหาร</div>
+    <div class="panel-b">
+      <div class="filters">
+        <label>Daily Date<input id="dailyDate" type="date"></label>
+        <label>Monthly<input id="month" type="month"></label>
+        <button class="btn" onclick="loadDaily()">Daily Report</button>
+        <button class="btn" onclick="loadMonthly()">Monthly Report</button>
+        <button class="btn" onclick="window.print()">Export PDF / Print</button>
+        <button class="btn" onclick="exportExcel()">Export Excel</button>
+      </div>
+      <div class="note no-print" style="margin-top:8px">Room Revenue ใช้ราคาห้องจริงจาก Booking หลังหักส่วนลด แล้วเฉลี่ยตามจำนวนคืน ไม่ใช้ Base Room Rate จาก Setup</div>
+      <div id="reportBox" style="margin-top:8px"></div>
+    </div>
+  </div>
+</div>
+
+<script src="/public/app.js"></script>
+<script>
+active("reports");
+q("dailyDate").value=today();
+q("month").value=today().slice(0,7);
+let mode="daily", settings={};
+
+function esc(v){return String(v??"").replace(/[&<>]/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[m]))}
+function cards(items){return `<div class="cards grid">${items.map(x=>`<div class="card metric-card"><h3>${x[0]}</h3><div class="big">${x[1]}</div><div class="muted">${x[2]||""}</div></div>`).join("")}</div>`}
+function printHeader(title,sub){
+  const logo=settings.hotel_logo_dataurl?`<img src="${settings.hotel_logo_dataurl}">`:"";
+  const company=settings.company_name||settings.hotel_name||"Hotel";
+  const addr=settings.company_address||settings.address||"";
+  const tax=settings.company_tax_id||settings.tax_id||"";
+  return `<div class="print-header">${logo}<div class="print-company">${esc(company)}</div><div class="print-meta">${esc(addr)}</div><div class="print-meta">Tel: ${esc(settings.phone||"")} ${tax?`Tax ID: ${esc(tax)}`:""}</div><div class="report-title">${esc(title)}</div><div class="report-sub">${esc(sub||"")}</div></div>`;
+}
+function sourceTable(obj){return `<table><thead><tr><th>Booking Source</th><th>Room Nights / Bookings</th></tr></thead><tbody>${Object.entries(obj||{}).map(([k,v])=>`<tr><td>${esc(k)}</td><td>${v}</td></tr>`).join("")||`<tr><td colspan="2">ไม่มีข้อมูล</td></tr>`}</tbody></table>`}
+function hkTable(obj){return `<table><thead><tr><th>Housekeeping Status</th><th>Rooms</th></tr></thead><tbody>${Object.entries(obj||{}).map(([k,v])=>`<tr><td>${esc(k)}</td><td>${v}</td></tr>`).join("")}</tbody></table>`}
+function roomRevenueTable(rows=[]){return `<table><thead><tr><th>Booking</th><th>Room</th><th>Guest</th><th>Total Room Charge</th><th>Nights</th><th>Daily Room Revenue</th></tr></thead><tbody>${rows.map(r=>`<tr><td>${esc(r.booking_no)}</td><td>${esc(r.room_no)}</td><td>${esc(r.guest_name)}</td><td style="text-align:right">${money(r.total_room_charge)}</td><td>${r.nights}</td><td style="text-align:right">${money(r.daily_room_revenue)}</td></tr>`).join("")||`<tr><td colspan="6">ไม่มีข้อมูลรายได้ค่าห้อง</td></tr>`}</tbody></table>`}
+function paymentBreakdown(rows=[]){return `<table><thead><tr><th>Time</th><th>Type</th><th>Booking</th><th>Room</th><th>Guest</th><th>Method</th><th>Shift</th><th>Category</th><th>Amount</th></tr></thead><tbody>${rows.map(r=>`<tr><td>${esc((r.at||"").replace("T"," ").slice(0,16))}</td><td>${esc(r.type)}</td><td>${esc(r.booking_no)}</td><td>${esc(r.room_no)}</td><td>${esc(r.guest_name)}</td><td>${esc(r.method)}</td><td>${esc(r.shift_name)}</td><td>${esc(r.category_name)}</td><td style="text-align:right">${money(r.amount)}</td></tr>`).join("")||`<tr><td colspan="9">ไม่มีรายการรับ/คืนเงิน</td></tr>`}</tbody></table>`}
+async function loadDaily(){
+  mode="daily";
+  const d=await api("/api/reports/daily?date="+q("dailyDate").value);
+  q("reportBox").innerHTML=`
+    ${printHeader("Daily Report / รายงานประจำวัน",d.date)}
+    <div class="panel"><div class="panel-h">Daily Report: ${d.date}</div><div class="panel-b">
+      ${cards([
+        ["Occupancy",d.occupancy+"%","อัตราเข้าพัก"],
+        ["Occupied Rooms",d.occupied_rooms+"/"+d.total_rooms,"ห้องที่มีแขก"],
+        ["Arrivals",d.arrivals,"เข้าใหม่"],
+        ["Departures",d.departures,"ออกวันนี้"],
+        ["Room Revenue",money(d.room_revenue),"รายได้ค่าห้องจริงจาก Booking"],
+        ["ADR",money(d.adr),"Average Daily Rate"],
+        ["RevPAR",money(d.revpar),"Revenue per Available Room"],
+        ["Payment",money(d.payment_total),"ยอดรับเงิน"],
+        ["Refund",money(d.refund_total),"คืนเงิน"],
+        ["Net Payment",money(d.net_payment),"สุทธิ"]
+      ])}
+      <div class="layout3" style="margin-top:8px">
+        <div class="panel"><div class="panel-h">Room Revenue Detail</div><div class="panel-b table-wrap">${roomRevenueTable(d.room_revenue_rows)}</div></div>
+        <div class="panel"><div class="panel-h">Payment Breakdown / ที่มายอดรับเงิน</div><div class="panel-b table-wrap">${paymentBreakdown(d.payment_breakdown)}</div></div>
+      </div>
+      <div class="layout3" style="margin-top:8px">
+        <div class="panel"><div class="panel-h">Booking Source</div><div class="panel-b table-wrap">${sourceTable(d.booking_source)}</div></div>
+        <div class="panel"><div class="panel-h">Housekeeping</div><div class="panel-b table-wrap">${hkTable(d.housekeeping)}<div style="margin-top:8px">OOO/OOS: ${esc((d.out_of_order_rooms||[]).join(", ")||"-")}</div></div></div>
+      </div>
+      <div class="layout3" style="margin-top:8px">
+        <div class="panel"><div class="panel-h">Arrivals List</div><div class="panel-b table-wrap"><table><thead><tr><th>Booking</th><th>Room</th><th>Guest</th><th>Agent</th></tr></thead><tbody>${d.arrivals_list.map(b=>`<tr><td>${esc(b.booking_no)}</td><td>${esc(b.room_no)}</td><td>${esc(b.guest_name)}</td><td>${esc(b.agent)}</td></tr>`).join("")||`<tr><td colspan="4">ไม่มีรายการ</td></tr>`}</tbody></table></div></div>
+        <div class="panel"><div class="panel-h">Departures List</div><div class="panel-b table-wrap"><table><thead><tr><th>Booking</th><th>Room</th><th>Guest</th><th>Agent</th></tr></thead><tbody>${d.departures_list.map(b=>`<tr><td>${esc(b.booking_no)}</td><td>${esc(b.room_no)}</td><td>${esc(b.guest_name)}</td><td>${esc(b.agent)}</td></tr>`).join("")||`<tr><td colspan="4">ไม่มีรายการ</td></tr>`}</tbody></table></div></div>
+      </div>
+    </div></div>`;
+}
+async function loadMonthly(){
+  mode="monthly";
+  const m=await api("/api/reports/monthly?month="+q("month").value);
+  q("reportBox").innerHTML=`
+    ${printHeader("Monthly Report / รายงานประจำเดือน",m.month)}
+    <div class="panel"><div class="panel-h">Monthly Report: ${m.month}</div><div class="panel-b">
+      ${cards([
+        ["Occupancy",m.occupancy+"%","เฉลี่ยทั้งเดือน"],
+        ["Room Nights",m.room_nights,"จำนวน room night"],
+        ["Room Revenue",money(m.room_revenue),"รายได้ค่าห้องจริง"],
+        ["ADR",money(m.adr),"Average Daily Rate"],
+        ["RevPAR",money(m.revpar),"Revenue per Available Room"],
+        ["Payment",money(m.payment_total),"ยอดรับเงิน"],
+        ["Refund",money(m.refund_total),"คืนเงิน"],
+        ["Net Payment",money(m.net_payment),"สุทธิ"]
+      ])}
+      <div class="layout3" style="margin-top:8px">
+        <div class="panel"><div class="panel-h">Booking Source Report</div><div class="panel-b table-wrap">${sourceTable(m.booking_source)}</div></div>
+        <div class="panel"><div class="panel-h">Daily Breakdown</div><div class="panel-b table-wrap"><table><thead><tr><th>Date</th><th>Occ %</th><th>Rooms</th><th>Revenue</th><th>ADR</th><th>RevPAR</th><th>Payment</th></tr></thead><tbody>${m.days.map(d=>`<tr><td>${d.date}</td><td>${d.occupancy}%</td><td>${d.occupied_rooms}</td><td>${money(d.room_revenue)}</td><td>${money(d.adr)}</td><td>${money(d.revpar)}</td><td>${money(d.payment_total)}</td></tr>`).join("")}</tbody></table></div></div>
+      </div>
+    </div></div>`;
+}
+function exportExcel(){
+  if(mode==="daily") location.href="/api/export/daily-report.xls?date="+q("dailyDate").value;
+  else location.href="/api/export/monthly-report.xls?month="+q("month").value;
+}
+async function init(){settings=await api('/api/settings'); await loadDaily()}
+init();
+</script>
+</body>
+</html>
