@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Online Readiness</title>
+  <link rel="stylesheet" href="/public/style.css">
+</head>
+<body>
+<div class="wrap">
+  <div class="panel">
+    <div class="panel-h">Online Readiness / ตรวจความพร้อมก่อนขึ้นออนไลน์</div>
+    <div class="panel-b">
+      <div class="filters">
+        <button class="btn" onclick="load()">Refresh</button>
+        <button class="btn" onclick="exportSeed()">Export Supabase Seed</button>
+        <a class="btn" href="/public/backup.html">Backup</a>
+        <a class="btn" href="/public/users.html">Users</a>
+      </div>
+      <div id="summary" class="cards grid" style="margin-top:10px"></div>
+    </div>
+  </div>
+
+  <div class="layout3">
+    <div class="panel">
+      <div class="panel-h">Checklist</div>
+      <div class="panel-b table-wrap">
+        <table>
+          <thead><tr><th>Status</th><th>Item</th><th>Detail</th></tr></thead>
+          <tbody id="checks"></tbody>
+        </table>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="panel-h">Next Step</div>
+      <div class="panel-b">
+        <div class="card">
+          <h3>Supabase</h3>
+          <p>Run <b>supabase/schema.sql</b> in Supabase SQL Editor, then use Export Supabase Seed to create the current JSON snapshot import.</p>
+        </div>
+        <div class="card" style="margin-top:10px">
+          <h3>Hosting</h3>
+          <p>Use HTTPS, server-side env keys only, and keep <b>SUPABASE_SERVICE_ROLE_KEY</b> out of every public file.</p>
+        </div>
+        <div id="exportBox" class="note"></div>
+      </div>
+    </div>
+  </div>
+</div>
+<script src="/public/app.js"></script>
+<script>
+active("online");
+function badge(ok){return `<span class="status ${ok?'INH':'CXL'}">${ok?'OK':'FIX'}</span>`}
+async function load(){
+  const d=await api("/api/system/online-readiness");
+  q("summary").innerHTML=`
+    <div class="card"><h3>Ready</h3><div class="big">${d.ready?'YES':'NO'}</div></div>
+    <div class="card"><h3>Rooms</h3><div class="big">${d.counts.rooms}</div></div>
+    <div class="card"><h3>Bookings</h3><div class="big">${d.counts.bookings}</div></div>
+    <div class="card"><h3>Payments</h3><div class="big">${d.counts.payments}</div></div>
+    <div class="card"><h3>Users</h3><div class="big">${d.counts.users}</div></div>
+    <div class="card"><h3>Backups</h3><div class="big">${d.counts.backups}</div></div>`;
+  q("checks").innerHTML=d.checks.map(c=>`<tr><td>${badge(c.ok)}</td><td><b>${esc(c.label)}</b></td><td>${esc(c.detail)}</td></tr>`).join("");
+}
+async function exportSeed(){
+  const r=await api("/api/system/export-supabase-seed",{method:"POST"});
+  q("exportBox").innerHTML=`Created <b>${esc(r.file)}</b><br>${esc(r.path)}<br>${Number(r.size||0).toLocaleString()} bytes`;
+}
+load();
+</script>
+</body>
+</html>
