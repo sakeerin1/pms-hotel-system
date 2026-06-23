@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Guest CRM</title>
+  <link rel="stylesheet" href="/public/style.css">
+  <style>
+    .modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.35);display:none;align-items:flex-start;justify-content:center;padding:36px 12px;z-index:20}
+    .modal{background:#d5eeee;border:1px solid var(--line);width:min(980px,100%);max-height:88vh;overflow:auto;box-shadow:0 12px 40px rgba(0,0,0,.35)}
+    .modal-h{background:linear-gradient(#edffff,#b6dddd);border-bottom:1px solid var(--line);padding:9px;font-weight:700;display:flex;justify-content:space-between}
+    .modal-b{padding:10px}
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <div class="panel">
+    <div class="panel-h">Guest CRM / ประวัติลูกค้า / ลูกค้าประจำ</div>
+    <div class="panel-b">
+      <div class="filters">
+        <label>Search<input id="search" placeholder="ชื่อ / เบอร์ / note / preference"></label>
+        <label>Filter<select id="filter"><option value="">ทั้งหมด</option><option value="blacklist">Blacklist</option><option value="watchlist">Watchlist</option><option value="member">Member</option></select></label>
+        <button class="btn" onclick="load()">Search</button>
+      </div>
+      <div class="table-wrap" style="margin-top:8px">
+        <table>
+          <thead><tr><th>Phone</th><th>Guest</th><th>Visits</th><th>ยอดใช้จ่ายรวม</th><th>Paid</th><th>Last Stay</th><th>Member</th><th>Discount</th><th>Blacklist</th><th>Watchlist</th><th>Preferences / Note</th><th>LINE</th><th>Action</th></tr></thead>
+          <tbody id="rows"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="modalBg" class="modal-bg"><div class="modal"><div class="modal-h"><span id="modalTitle">Detail</span><button class="btn" onclick="closeModal()">Close</button></div><div class="modal-b" id="modalBody"></div></div></div>
+
+<script src="/public/app.js"></script>
+<script>
+active("crm"); let all=[];
+function esc(v){return String(v??"").replace(/[&<>\"]/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[m]))}
+function closeModal(){q("modalBg").style.display="none";q("modalBody").innerHTML=""}
+function showModal(title,html){q("modalTitle").textContent=title;q("modalBody").innerHTML=html;q("modalBg").style.display="flex"}
+async function load(){
+ all=await api("/api/crm/customers");
+ const s=(q("search").value||"").toLowerCase(); const f=q("filter").value;
+ const rows=all.filter(c=>{
+   const txt=JSON.stringify(c).toLowerCase();
+   if(s && !txt.includes(s)) return false;
+   if(f==="blacklist" && !c.profile.blacklist) return false;
+   if(f==="watchlist" && !c.profile.watchlist) return false;
+   if(f==="member" && (!c.profile.member_level || c.profile.member_level==="Normal")) return false;
+   return true;
+ });
+ q("rows").innerHTML=rows.map(c=>`<tr>
+   <td><b>${esc(c.phone)}</b></td>
+   <td>${esc(c.guest_name||"")}</td>
+   <td><b>${c.visits}</b></td>
+   <td>${money(c.revenue)}</td>
+   <td>${money(c.paid_total)}</td>
+   <td>${esc(c.last_stay||"")}</td>
+   <td><select id="level_${c.phone}"><option ${c.profile.member_level==="Normal"?"selected":""}>Normal</option><option ${c.profile.member_level==="Silver"?"selected":""}>Silver</option><option ${c.profile.member_level==="Gold"?"selected":""}>Gold</option><option ${c.profile.member_level==="VIP"?"selected":""}>VIP</option></select></td>
+   <td><input id="disc_${c.phone}" type="number" value="${Number(c.profile.discount_percent||0)}" style="width:70px">%</td>
+   <td><select id="black_${c.phone}"><option value="false" ${!c.profile.blacklist?"selected":""}>No</option><option value="true" ${c.profile.blacklist?"selected":""}>Yes</option></select></td>
+   <td><select id="watch_${c.phone}"><option value="false" ${!c.profile.watchlist?"selected":""}>No</option><option value="true" ${c.profile.watchlist?"selected":""}>Yes</option></select></td>
+   <td><textarea id="pref_${c.phone}" rows="2" placeholder="เช่น ชอบชั้นบน / ห้องริม">${esc(c.profile.preferences||"")}</textarea><textarea id="note_${c.phone}" rows="2" placeholder="หมายเหตุ / แพ้อาหาร / ลูกค้าประจำ">${esc(c.profile.note||"")}</textarea></td>
+   <td><input id="line_${c.phone}" value="${esc(c.profile.line_user_id||"")}" placeholder="LINE User ID" style="min-width:110px"></td>
+   <td><button class="btn" onclick="save('${esc(c.phone)}')">Save</button> <button class="btn" onclick="detail('${esc(c.phone)}')">History</button> <button class="btn" onclick="lineMsg('${esc(c.phone)}')">LINE</button></td>
+  </tr>`).join("");
+}
+async function save(phone){
+ const payload={member_level:q("level_"+phone).value,discount_percent:Number(q("disc_"+phone).value),blacklist:q("black_"+phone).value==="true",watchlist:q("watch_"+phone).value==="true",preferences:q("pref_"+phone).value,note:q("note_"+phone).value,line_user_id:q("line_"+phone).value};
+ await api("/api/crm/customers/"+encodeURIComponent(phone),{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});
+ alert("Saved"); load();
+}
+async function detail(phone){
+ const c=await api("/api/crm/customer?phone="+encodeURIComponent(phone));
+ showModal("Customer History: "+phone, `
+  <div class="cards"><div class="card"><b>Visits</b><h2>${c.visits}</h2></div><div class="card"><b>Revenue</b><h2>${money(c.revenue)}</h2></div><div class="card"><b>Paid</b><h2>${money(c.paid_total)}</h2></div><div class="card"><b>Extra</b><h2>${money(c.extra_total)}</h2></div></div>
+  <div class="card" style="margin-top:8px"><b>Note</b><br>Preference: ${esc(c.profile.preferences||"")}<br>Note: ${esc(c.profile.note||"")}<br>Member: ${esc(c.profile.member_level)} / Discount ${Number(c.profile.discount_percent||0)}%</div>
+  <h3>Booking History</h3><div class="table-wrap"><table><thead><tr><th>Booking</th><th>Room</th><th>Stay</th><th>Status</th><th>Total</th><th>Paid</th><th>Balance</th><th>Agent</th></tr></thead><tbody>${(c.bookings||[]).map(b=>`<tr><td>${esc(b.booking_no)}</td><td>${esc(b.room_no)}</td><td>${esc(b.checkin)} → ${esc(b.checkout)}</td><td>${esc(b.status)}</td><td>${money(b.total_amount)}</td><td>${money(b.paid_amount)}</td><td>${money(b.balance)}</td><td>${esc(b.agent||"")}</td></tr>`).join("")}</tbody></table></div>
+  <h3>LINE Message Log</h3><div class="table-wrap"><table><thead><tr><th>Date</th><th>Status</th><th>Message</th><th>Note</th></tr></thead><tbody>${(c.line_messages||[]).map(m=>`<tr><td>${esc((m.created_at||"").slice(0,16).replace("T"," "))}</td><td>${esc(m.status)}</td><td>${esc(m.message)}</td><td>${esc(m.note)}</td></tr>`).join("")}</tbody></table></div>
+ `);
+}
+function lineMsg(phone){
+ const c=all.find(x=>String(x.phone)===String(phone));
+ const msg=`สวัสดีค่ะ/ครับ คุณ${c?.guest_name||"ลูกค้า"} ขอบคุณที่เคยเข้าพักกับเรา โรงแรมมีสิทธิพิเศษสำหรับลูกค้าประจำ สนใจจองห้องพักทักกลับได้เลยค่ะ/ครับ`;
+ showModal("ส่งข้อความ LINE / บันทึกข้อความ", `<div class="card">Phone: <b>${esc(phone)}</b><br>ถ้ายังไม่ได้ตั้งค่า LINE User ID และ Channel Access Token ระบบจะบันทึกเป็นข้อความร่างก่อน</div><label style="margin-top:8px">ข้อความ<textarea id="line_message" rows="5">${esc(msg)}</textarea></label><div class="actions" style="margin-top:8px"><button class="btn" onclick="sendLine('${esc(phone)}')">Save / Queue LINE Message</button></div>`);
+}
+async function sendLine(phone){
+ const row=await api("/api/crm/line-message",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({phone,message:q("line_message").value,line_user_id:q("line_"+phone)?.value||""})});
+ alert(row.status==="queued"?"บันทึกคิวข้อความ LINE แล้ว":"บันทึกข้อความร่างแล้ว: ยังไม่ได้ตั้งค่า LINE ครบ");
+ closeModal(); load();
+}
+load();
+</script>
+</body>
+</html>
