@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Mobile Housekeeping</title>
+  <link rel="stylesheet" href="/public/style.css">
+</head>
+<body>
+<div class="wrap">
+  <div class="panel">
+    <div class="panel-h">Mobile Housekeeping</div>
+    <div class="panel-b">
+      <div class="actions">
+        <button class="btn" onclick="location.href='/public/housekeeping.html'">Full Housekeeping</button>
+      </div>
+      <div id="cards" style="margin-top:8px"></div>
+    </div>
+  </div>
+</div>
+<script src="/public/app.js"></script>
+<script>
+active("hk");
+async function load(){
+  const d = await api("/api/housekeeping");
+  const rows = d.rows.filter(r=>["VD","OCC"].includes(r.housekeeping_status)||r.is_departure_today||r.is_arrival_today);
+  q("cards").innerHTML = rows.map(r=>`
+    <div class="card" style="margin-bottom:8px">
+      <div style="font-size:22px;font-weight:700">Room ${r.room_no}</div>
+      <div>${r.room_type_code} - ${r.room_type_name}</div>
+      <div>HK: <b>${r.housekeeping_status}</b></div>
+      <div>Arrival: ${r.arrival_guest||"-"}</div>
+      <div>Departure: ${r.departure_guest||"-"}</div>
+      <label>เปลี่ยนสถานะ
+        <select onchange="changeStatus('${r.room_no}',this.value)">
+          ${["VC","VD","OCC","OOO","OOS","Inspected"].map(s=>`<option ${s===r.housekeeping_status?"selected":""}>${s}</option>`).join("")}
+        </select>
+      </label>
+    </div>
+  `).join("");
+}
+async function changeStatus(room,status){
+  await api(`/api/rooms/${room}/housekeeping`,{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({housekeeping_status:status})});
+  await load();
+}
+load();
+</script>
+</body>
+</html>
