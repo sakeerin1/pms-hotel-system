@@ -1,0 +1,29 @@
+<!doctype html><html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Room Availability</title><link rel="stylesheet" href="/public/style.css"></head><body>
+<div class="wrap"><div class="panel"><div class="panel-h">Room Availability / ห้องว่าง</div><div class="panel-b">
+<div class="filters">
+<label>Check-in<input id="checkin" type="date"></label>
+<label>Check-out<input id="checkout" type="date"></label>
+<div><button class="btn" onclick="loadAvail()">Search</button></div>
+<div class="note" style="grid-column:span 3">แสดงจำนวนห้องว่างตาม Room Type พร้อมราคา, Stop Sale และ Min Night</div>
+</div>
+</div></div>
+<div class="panel"><div class="panel-h">Availability Result</div><div class="panel-b table-wrap"><table>
+<thead><tr><th>Code</th><th>Room Type</th><th>Total Rooms</th><th>Booked</th><th>Available</th><th>Avg Rate</th><th>Total Stay</th><th>Rate Plan</th><th>Stop Sale</th><th>Min Night</th><th>Direct Discount</th></tr></thead>
+<tbody id="rows"></tbody>
+</table></div></div>
+</div>
+<script src="/public/app.js"></script><script>
+active("roomavail");
+q("checkin").value=today(); q("checkout").value=addDays(today(),1);
+async function loadAvail(){
+  const ci=q("checkin").value||today(), co=q("checkout").value||addDays(ci,1);
+  const d=await api(`/api/availability?checkin=${ci}&checkout=${co}`);
+  q("rows").innerHTML=d.map(r=>`<tr>
+    <td><b>${r.code}</b></td><td>${r.name}<div class="muted">${r.description||""}</div></td>
+    <td>${r.total_rooms}</td><td>${r.booked}</td><td><b class="big" style="font-size:18px">${r.available}</b></td>
+    <td>${money(r.price)}</td><td>${money(r.total_stay_price)}</td><td>${r.rate_plan||""}</td>
+    <td>${r.stop_sale?"YES":"NO"}</td><td>${r.min_night}</td><td>${r.direct_discount||0}%</td>
+  </tr>`).join("");
+}
+loadAvail().catch(e=>alert(e.message));
+</script></body></html>
