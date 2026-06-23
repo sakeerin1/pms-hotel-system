@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Work Order</title>
+  <link rel="stylesheet" href="/public/style.css">
+  <style>
+    body{background:#fff}.print-wrap{max-width:900px;margin:20px auto;background:#fff;color:#111;padding:24px;border:1px solid #333}.wo-head{display:flex;gap:16px;align-items:center;border-bottom:2px solid #333;padding-bottom:12px}.wo-logo{max-width:90px;max-height:70px}.wo-title{font-size:24px;font-weight:800}.wo-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:14px}.wo-box{border:1px solid #333;padding:10px;min-height:42px}.sign{display:grid;grid-template-columns:1fr 1fr 1fr;gap:18px;margin-top:40px}.sign div{border-top:1px solid #333;text-align:center;padding-top:8px}@media print{.no-print,.legacy-shell{display:none!important}.print-wrap{border:0;margin:0;max-width:none}}
+  </style>
+</head>
+<body>
+<div class="no-print" style="padding:10px"><button class="btn" onclick="window.print()">Print</button> <a class="btn" href="/public/maintenance.html">Back</a></div>
+<div id="doc" class="print-wrap">Loading...</div>
+<script src="/public/app.js"></script>
+<script>
+active("maintenance");
+function esc(v){return String(v??"").replace(/[&<>\"]/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[m]))}
+async function load(){
+ const id=new URLSearchParams(location.search).get("id");
+ const t=await api("/api/maintenance/"+id);
+ const s=t.settings||{};
+ q("doc").innerHTML=`
+ <div class="wo-head">${s.hotel_logo_dataurl?`<img class="wo-logo" src="${s.hotel_logo_dataurl}">`:""}<div><div class="wo-title">ใบงานแจ้งซ่อม / Maintenance Work Order</div><div><b>${esc(s.hotel_name||"")}</b></div><div>${esc(s.address||"")} ${esc(s.phone||"")}</div></div></div>
+ <div class="wo-grid">
+  <div class="wo-box"><b>Work Order No.</b><br>${esc(t.work_order_no||t.ticket_no)}</div>
+  <div class="wo-box"><b>Ticket No.</b><br>${esc(t.ticket_no)}</div>
+  <div class="wo-box"><b>วันที่แจ้ง</b><br>${esc((t.created_at||"").slice(0,10))}</div>
+  <div class="wo-box"><b>กำหนดเสร็จ</b><br>${esc(t.due_date||"")}</div>
+  <div class="wo-box"><b>สถานที่ / ห้อง</b><br>${esc(t.room_no||t.area||"")}</div>
+  <div class="wo-box"><b>Priority / Status</b><br>${esc(t.priority)} / ${esc(t.status)}</div>
+  <div class="wo-box"><b>ผู้แจ้ง</b><br>${esc(t.reported_by||"")}</div>
+  <div class="wo-box"><b>ผู้รับผิดชอบ</b><br>${esc(t.assigned_to||"")}</div>
+  <div class="wo-box" style="grid-column:1/-1"><b>เรื่อง</b><br>${esc(t.title||"")}</div>
+  <div class="wo-box" style="grid-column:1/-1;min-height:90px"><b>รายละเอียด</b><br>${esc(t.detail||"")}</div>
+  <div class="wo-box" style="grid-column:1/-1;min-height:90px"><b>วิธีแก้ไข / Solution</b><br>${esc(t.solution||"")}</div>
+  <div class="wo-box"><b>Block Sale</b><br>${t.block_sale!==false?`${esc(t.block_start_date)} ถึง ${esc(t.block_end_date)}`:"ไม่ปิดขาย"}</div>
+  <div class="wo-box"><b>Cost</b><br>${money(t.cost||0)}</div>
+ </div>
+ <div class="sign"><div>ผู้แจ้งซ่อม</div><div>ช่างผู้รับงาน</div><div>ผู้ตรวจรับงาน</div></div>`;
+}
+load();
+</script>
+</body>
+</html>
