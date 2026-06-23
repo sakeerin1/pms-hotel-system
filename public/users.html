@@ -1,0 +1,32 @@
+<!doctype html><html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Users / Permission</title><link rel="stylesheet" href="/public/style.css"></head><body>
+<div class="wrap"><div class="panel"><div class="panel-h">User / Permission / Audit Log</div><div class="panel-b">
+<div class="card"><b>Role แนะนำ</b><br>admin = ทุกเมนู, manager = รายงาน/อนุมัติ, frontdesk = รับจอง/เช็คอิน, cashier = การเงิน, housekeeping = แม่บ้าน, maintenance = ช่าง</div>
+<div class="panel" style="margin-top:8px"><div class="panel-h">Create User</div><div class="panel-b">
+<div class="formgrid"><label>Username<input id="username"></label><label>Password<input id="password" type="password"></label><label>Display Name<input id="display_name"></label><label>Role<select id="role"><option>admin</option><option>manager</option><option>frontdesk</option><option>cashier</option><option>housekeeping</option><option>maintenance</option></select></label></div>
+<div class="actions" style="margin-top:8px"><button class="btn" onclick="addUser()">Create User</button></div>
+</div></div>
+<div class="layout3" style="margin-top:8px">
+<div class="panel"><div class="panel-h">Users</div><div class="panel-b table-wrap"><table><thead><tr><th>Username</th><th>Display</th><th>Role</th><th>Active</th><th>New Password</th><th>Save</th></tr></thead><tbody id="userRows"></tbody></table></div></div>
+<div class="panel"><div class="panel-h">Activity Log</div><div class="panel-b table-wrap"><table><thead><tr><th>Time</th><th>Action</th><th>Detail</th></tr></thead><tbody id="logRows"></tbody></table></div></div>
+</div>
+</div></div></div>
+<script src="/public/app.js"></script><script>
+active("users");
+async function load(){
+ const users=await api("/api/users");
+ q("userRows").innerHTML=users.map(u=>`<tr><td><b>${u.username}</b></td><td><input id="dn_${u.id}" value="${u.display_name||""}"></td><td><select id="role_${u.id}">${["admin","manager","frontdesk","cashier","housekeeping","maintenance"].map(r=>`<option ${u.role===r?"selected":""}>${r}</option>`).join("")}</select></td><td><select id="active_${u.id}"><option value="true" ${u.active?"selected":""}>Yes</option><option value="false" ${!u.active?"selected":""}>No</option></select></td><td><input id="pw_${u.id}" type="password" placeholder="เว้นว่างถ้าไม่เปลี่ยน"></td><td><button class="btn" onclick="saveUser(${u.id})">Save</button></td></tr>`).join("");
+ const logs=await api("/api/activity-logs");
+ q("logRows").innerHTML=logs.slice(0,100).map(l=>`<tr><td>${l.at.slice(0,19).replace("T"," ")}</td><td>${l.action}</td><td>${l.detail}</td></tr>`).join("");
+}
+async function addUser(){
+ await api("/api/users",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({username:q("username").value,password:q("password").value,display_name:q("display_name").value,role:q("role").value,active:true})});
+ q("username").value="";q("password").value="";q("display_name").value="";load();
+}
+async function saveUser(id){
+ const payload={display_name:q("dn_"+id).value,role:q("role_"+id).value,active:q("active_"+id).value==="true"};
+ if(q("pw_"+id).value) payload.password=q("pw_"+id).value;
+ await api("/api/users/"+id,{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});
+ load();
+}
+load();
+</script></body></html>
