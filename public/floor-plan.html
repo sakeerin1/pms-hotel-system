@@ -1,0 +1,19 @@
+<!doctype html><html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Floor Plan</title><link rel="stylesheet" href="/public/style.css"></head><body>
+<div class="wrap"><div class="panel"><div class="panel-h">Floor Plan / แผนผังชั้น</div><div class="panel-b">
+<div class="actions"><button class="btn" onclick="loadFloor()">Refresh</button><a class="btn" href="/public/roomplan.html">Open Room Plan</a><a class="btn" href="/public/housekeeping.html">Housekeeping</a></div>
+<div class="note">จัดกลุ่มห้องตามชั้น เพื่อดูภาพรวมเลขห้อง ประเภทห้อง เตียง และสถานะแม่บ้าน</div>
+</div></div>
+<div id="floors"></div></div>
+<script src="/public/app.js"></script><script>
+active("floorplan");
+function hkLabel(s){return ({VC:"Vacant Clean",VD:"Vacant Dirty",OC:"Occupied Clean",OD:"Occupied Dirty",OOO:"Out of Order",OOS:"Out of Service"})[s]||s||""}
+async function loadFloor(){
+  const rooms=await api("/api/rooms");
+  const grouped={}; rooms.forEach(r=>{const f=r.floor||String(r.room_no||"").slice(0,1)||"-";(grouped[f] ||= []).push(r)});
+  q("floors").innerHTML=Object.entries(grouped).sort(([a],[b])=>String(a).localeCompare(String(b))).map(([floor,list])=>`
+    <div class="panel"><div class="panel-h">Floor ${floor} <span class="muted">(${list.length} rooms)</span></div><div class="panel-b"><div class="floor-grid">
+      ${list.sort((a,b)=>Number(a.room_no)-Number(b.room_no)).map(r=>`<div class="floor-room ${r.housekeeping_status||"VC"}"><div class="room-no">${r.room_no}</div><div class="room-meta">${r.room_type_code||""} / ${r.bed_type_code||""}</div><div class="room-meta">${hkLabel(r.housekeeping_status)}</div></div>`).join("")}
+    </div></div></div>`).join("");
+}
+loadFloor().catch(e=>alert(e.message));
+</script></body></html>
